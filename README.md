@@ -1,0 +1,2 @@
+# SCAME
+learning emacs
