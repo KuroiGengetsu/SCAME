@@ -220,3 +220,5 @@ int main(void)
 
 支持一些GitHub的操作
 
+[^1]: 脚标1
+
