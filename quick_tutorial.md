@@ -240,3 +240,59 @@ emacs 的文档:
 1. completion 自动补全
 2. dired 目录编辑
 
+## 主模式 info 的快捷键
+
+### 在不同节点之间移动 ###
+
+* `h`: invoke the info tutorial
+* `q`: quit
+* `mouse-2`: 鼠标左键: 点链接
+* `RET`: 点链接
+* `n`: 移动到下一个节点
+* `p`: 移动到上一个节点
+* `^`: 从当前节点 move "up"
+* `m`: 选中菜单item通过名字
+* `d`: 前往 info 目录节点
+* `<`: 前往该文件的最顶节点
+* `>`: 前往该文件最后一个节点
+* `[`: 回到上一个节点
+* `]`: 前往下一个节点
+* `TAB`: 移动光标到下一个 cross-reference or menu item
+* `C-M-i`: 移动光标到上一个 cross-reference or menu item
+* `f`: 跟随一个 cross reference, reads name of reference
+* `l`: 回到上一个访问的节点
+* `r`: 前往按 `l` 之前的那个节点
+* `L`: 前往访问过的节点菜单
+* `T`: 前往当前 info 文件中的 内容列表
+
+### 在一个节点中移动 ###
+
+* `SPC`: 空格, 类似于 `C-v`, 但是到底之后可以前往下一个节点, 如果是最后一个节点, 返回父节点
+* `DEL`: Backspace, 往上翻, 如果是顶部, 返回菜单节点
+* `b`: 前往节点开头 beginning of node
+* `e`: 前往节点的结尾 end of node
+
+### 高级命令 ###
+
+* `s`: 搜索
+* `S`: 大小写敏感的搜索
+* `C-s`, `C-M-s`: 在多个 info 节点搜索
+* `i`: 搜索topic, 然后前往话题的index
+* `，`: 逗号, 前往 i 搜索的下一个匹配点
+* `I`: 搜索一个字符串, 并且展示结果的index节点
+* `M-x info-apropos`: 在所有教程中搜索字符串
+* `g`: 前往指定名字的节点
+* `1 .. 9`: 1-9的数字, 选择节点菜单中前9个节点
+* `c`: 将当前 info node 的名字放在 kill ring
+* `M-n`: 在另一个窗格选择一个新的 cloned info buffer
+* `C-u C-h i`: 移动到新的info文件
+* `C-u 数字 C-h i` : 从 `*info*<N>` 中选择 info buffer
+
+### 总结 ###
+
+* 上一个节点: `p`, `[`
+* 下一个节点: `n`, `]`
+* 前往 info 目录: `d`
+* 往下翻页: `SPC`
+* 网上翻页: `DEL` backspace
+

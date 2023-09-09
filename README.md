@@ -12,5 +12,9 @@ learning emacs
 
 [quick-tutorial.md](./quick_tutorial.md)
 
-## 1 The organization of the Screen 屏幕的布局
+## 1 Elisp
+
+[elisp-learn.md](./elisp_learn.md)
+
+## 2 The organization of the Screen 屏幕的布局
 
