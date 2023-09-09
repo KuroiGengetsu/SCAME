@@ -295,4 +295,33 @@ emacs 的文档:
 * 前往 info 目录: `d`
 * 往下翻页: `SPC`
 * 网上翻页: `DEL` backspace
+* 目录: `T`
+
+## 书签功能 bookmark ##
+
+设置一个书签:
+
+* `M-x bookmark-set` 或 `C-x r m`
+
+列出保存的标签:
+
+* `bookmark-bmenu-list` 或 `C-x r l`, 会打开一个书签的buffer: **Bookmark List**
+
+在当前buffer, 有以下快捷键可以使用:
+
+* `a` 显示当前书签的标注信息
+* `A` 在另一个buffer中显示所有书签的所有信息
+* `d` 标记书签, 以便用来删除 (`x` 执行删除)
+* `e` 编辑当前书签的标注信息
+* `m` 标记书签, 以便用于进一步显示和其他操作 (`v` 访问这个标签)
+* `o` 选中当前书签, 并显示在另一个 window 中
+* `C-o` 在另一个 window 中切换到当前这个书签
+* `r` 重命名当前书签
+* `w` 将当前书签的位置信息显示在 minibuffer 里
+
+跳转到一个书签:
+
+* 使用 `bookmark-jump` 函数, 可以跳转到一个特定的书签, 快捷键 `C-x r b`
+
+
 
