@@ -439,3 +439,77 @@ counter
 (message "The counter now is %d." counter)
 ```
 
+## 2. Practicing Evaluation ##
+
+### 2.1 Buffer Names ###
+
+``` elisp
+(buffer-name)       ; elisp_learn.md
+(buffer-file-name)  ; ~/MyGitHub/SCAME/elisp_learn.md
+```
+
+`nil` 在 emacs 中指的是 `()`
+
+`C-u C-x C-e` 会将结果放到光标的位置
+
+``` elisp
+(buffer-name)"elisp_learn.md"
+(buffer-file-name)"d:/Coding/MyGitHub/SCAME/elisp_learn.md"
+```
+
+### 2.2 Getting Buffers ###
+
+``` elisp
+(current-buffer)  ;; #<buffer elisp_learn.md> 
+```
+
+表示 buffer 本身被返回, 不仅仅是名字
+
+``` elisp
+(other-buffer)  ;; #<buffer *scratch*>
+```
+
+(other-buffer) 返回的是最近访问的其他buffer
+
+### 2.3 Switching Buffers ###
+
+`switch-to-buffer` function
+
+快捷键都是调用函数, 例如 `C-f` 调用 `forward-char`, `M-e` 调用的是 `forward-sentence`
+
+``` elisp
+(switch-to-buffer (other-buffer))  ;; 等同于 C-x b <RET>
+```
+
+`set-buffer`
+
+``` elisp
+(switch-to-buffer (other-buffer (current-buffer) t))
+```
+
+### 2.4 Buffer Size and the Location of Point ###
+
+当前 buffer 的尺寸
+
+``` elisp
+(buffer-size)  ;; 8775
+```
+
+在 emacs 中, 光标当前的位置叫做 `point`
+
+``` elisp
+(point)  ;; 8847
+```
+
+``` elisp
+(point-min)  ;; 1
+```
+
+``` elisp
+(point-max)  ;; 8922 当前 buffer point 最大的值
+```
+
+## 3 How To Write Function Definitions ##
+
+
+
