@@ -1294,3 +1294,336 @@ let 的函数体有 `save-excursion` 表达式
 )
 ```
 
+## 5 更复杂的函数 ##
+
+### 5.1 `copy-to-buffer` 的定义 ###
+
+`copy-to-buffer` 的函数体像这样:
+
+``` elisp
+; ...
+(interactive "BCopy to buffer: \nr")
+(let ((oldbuf (current-buffer)))
+  (with-current-buffer (get-buffer-create buffer)
+    (barf-if-buffer-read-only)
+    (erase-buffer)
+    (save-excursion
+      (insert-buffer-substring oldbuf start end))))
+```
+
+`copy-to-buffer` 的 interactive 比 `append-to-buffer` 要简单
+
+先看这一行: `with-current-buffer (get-buffer-create buffer)`
+
+`get-buffer-create` 获得名为 buffer 的buffer, 如果 buffer 不存在, 则创建
+
+`with-current-buffer` 暂时将计算机的注意力放到一个buffer, 并不会改变用户的注意力
+
+`barf-if-buffer-read-only` 如果这个 buffer 是只读的, 你就没法修改它, 然后会打印错误信息
+
+`erase-buffer` 会清除buffer
+
+接下来就是 `save-excursion` 和 `insert-buffer-substring` 的组合了
+
+### 5.2 `insert-buffer` 的定义 ###
+
+`insert-buffer` 会把其他 buffer 的内容拷贝到当前的 buffer
+
+早些版本的代码如下:
+
+``` elisp
+(defun insert-buffer (buffer)
+  "Insert after point the contents of BUFFER.
+Puts mark after the inserted text.
+BUFFER may be a buffer or a buffer name."
+  (interactive "*bInsert buffer: ")
+  (or (bufferp buffer)
+      (setq buffer (get-buffer buffer)))
+  (let (start end newmark)
+    (save-excursion
+      (save-excursion
+        (set-buffer buffer)
+        (setq start (point-min) end (point-max)))
+      (insert-buffer-substring buffer start end)
+      (setq newmark (point)))
+    (push-mark newmark)))
+```
+
+以下是一个模板:
+
+``` elisp
+(defun insert-buffer (buffer)
+  "DOCUMENTATION..."
+  (interactive "*bInsert buffer: ")
+  BODY...)
+```
+
+#### 5.2.1 `insert-buffer` 中的 interactive ####
+
+在 `insert-buffer` 中, interactive 的参数由两部分组成
+
+* `*` 也就是 *asterisk* 星号, 表示 *read-only* 只读的buffer, 在 interactive 中不需要换行
+* `bInsert buffer: `
+
+如果当前的 buffer 是 只读buffer, 此时调用 `insert-buffer`, 那么就会提示你无法向当前的 buffer 插入任何东西
+
+而第二部分, 也就是 `bInsert buffer:`, `b` 表示 `insert-buffer` 的参数必须是一个已经存在的buffer或者存在的buffer的名字 (而大写的 `B` 表示buffer是可能不存在的)
+
+如果 buffer 不存在, 就会提示 "No match"
+
+#### 5.2.2 `insert-buffer` 函数的函数体 ####
+
+函数体主要有两部分, `or` 和 `let`:
+
+``` elisp
+(defun insert-buffer (buffer)
+  "DOCUMENTATION..."
+  (interactive "*bInsert buffer: ")
+  (or ...
+      ...)
+  (let (VARLIST)
+    BODY-OF-let...))
+```
+
+`or` 主要是用来区分 参数buffer 是一个 buffer 还是 buffer的名字
+
+#### 5.2.3 `insert-buffer` 假如没用 or ####
+
+判断是 buffer 还是 buffer 的名字
+
+`bufferp` 用来判断是否是一个buffer, 是 buffer 返回 True, 不是则返回 False, 'p' 后缀表示的是 *predicate谓语*, 意思就是判断可能性, 类似布尔函数
+
+`not` 表示否
+
+``` elisp
+(if (not (bufferp buffer))              ; if-part
+    (setq buffer (get-buffer buffer)))  ; then-part
+```
+
+#### 5.2.4 函数体中的 `or` ####
+
+Elisp 中的 `or` 可以有任意多个表达式, 它会返回第一个非 nil 的参数, 同样也会短路, 也就是一旦遇到非 nil, 后面的语句都不会执行, 直接返回
+
+``` elisp
+(or (bufferp buffer)
+    (setq buffer (get-buffer buffer)))
+```
+
+#### 5.2.5 `insert-buffer` 中的 `let` ####
+
+`let` 里面指定了三个局部变量:
+
+* *start*
+* *end*
+* *newmark*
+
+并且把他们初始化为 nil(默认)
+
+`let` 中包含了两个 `save-excursion`
+
+``` elisp
+(save-excursion
+  (set-buffer buffer)
+  (setq start (point-min) end (point-max)))
+```
+
+首先是把 emacs 的注意力放到 buffer 上, 然后把 start 和 end 分别赋值为 *point-min* 和 *point-max*
+
+外层的 `save-excursion`:
+
+``` elisp
+(save-excursion
+  (INNER-save-excursion-EXPRESSION
+    (GO-TO-NEW-BUFFER-AND-SET-start-AND-end)
+  (insert-buffer-substring buffer start end)
+  (setq newmark (point))))
+```
+
+`insert-buffer-substring` 函数把从 start 到 end 的文本拷贝到当前的 buffer
+
+然后把插入文本的最后位置 point 记为 newmark
+
+执行完 `save-excursion` 之后, point 回到原本的位置
+
+在 let 的最后一行, 会在 newmark 设置一个 mark, 这样之后就可以通过 `C-u C-<SPC>` 来回到 newmark
+
+整个 let 看上去像这样:
+
+``` elisp
+(let (start end newmark)
+  (save-excursion
+    (save-excursion
+      (set-buffer buffer)
+      (setq start (point-min) end (point-max)))
+    (insert-buffer-substring buffer start end)
+    (setq newmark (point)))
+  (push-mark newmark))
+```
+
+#### 5.2.6 `insert-buffer` 的新版本 ####
+
+在 Emacs 22 版本, 它包含两个表达式:
+
+``` elisp
+(push-mark
+  (save-excursion
+    (insert-buffer-substring (get-buffer buffer))
+    (point)))
+
+  nil
+```
+
+首先, `get-buffer` 会返回已经存在的 buffer, 然后把它传给 `insert-buffer-substring`, 然后插入整个 buffer
+
+插入的位置由 `push-mark` 记录, 然后函数返回 nil
+
+`insert-buffer` 函数只是插入另一个 buffer, 什么也不返回
+
+### 5.3 `beginning-of-buffer` 的完整定义 ###
+
+之前学到的是简化的定义, 如下:
+
+``` elisp
+(defun simplified-beginning-of-buffer ()
+	"Move point to the beginning of the buffer;
+	leave mark at previous position."
+	(interactive)
+	(push-mark)
+	(goto-char (point-min))
+)
+```
+
+实际上, `beginning-of-buffer` 还有一个可选的用法, 那就是输入一个 1~10 之间的数字, 会把光标移动到文件对应比例的位置, 例如输入 `C-u 7 M-<` 就会移动到 70% 的位置
+
+#### 可选参数 Optional Arguments ####
+
+有一个关键字来表示参数是可选的:
+
+`&optional`
+
+`beginning-of-buffer` 的第一行定义像这样:
+
+``` elisp
+(defun beginning-of-buffer (&optional arg))
+```
+
+整个函数大致如下:
+
+``` elisp
+(defun beginning-of-buffer (&optional arg)
+  "DOCUMENTATION"
+  (interactive "P")
+  (or (IS-THE-ARGUMENT-A-CONS-CELL arg)
+      (and ARE-BOTH-TRANSIENT-MARK-MODE-AND-MARK-ACTIVE-TRUE)
+      (push-mark))
+  (let (DETERMINE-SIZE-AND-SET-IT)
+  (goto-char
+    (IF-THERE-IS-AN-ARGUMENT
+      FIGURE-OUT-WHERE-TO-GO
+      ELSE-GO-TO
+      (point-min))))
+      DO-NICETY
+)
+```
+
+`interactive` 中的 "P" 表示传给函数一个 raw form 的参数, 如果有的话
+
+`if` 语句中检查 *arg* 是否是 *非nil* 或者是一个 *cons cell*
+
+``` elisp
+(if (> (buffer-size) 10000)
+    ;; Avoid overflow for large buffer sizes!
+    (* (prefix-numeric-value arg)
+       (/ size 10))
+    (/ (+ 10 (* size (prefix-numeric-value arg))) 10))
+```
+
+之所以要检查 buffer-size 是因为老版本的数值不超过 八百万
+
+当 interactive 使用 P 时, 传进来的参数是原生的 raw
+
+`(prefix-numeric-value arg)` 表示把原生值转换为数值
+
+所以这个乘法就是这个意思:
+
+``` elisp
+(* PREFIX-ARG的数值
+   在ACCESSIBLE-BUFFER的十分之几)
+```
+
+如果 buffer-size 比较小的话, 就先加上 10, 然后再去做计算
+
+#### 5.3.3 完整的 `beginning-of-buffer` ####
+
+``` elisp
+     (defun beginning-of-buffer (&optional arg)
+       "Move point to the beginning of the buffer;
+     leave mark at previous position.
+     With \\[universal-argument] prefix,
+     do not set mark at previous position.
+     With numeric arg N,
+     put point N/10 of the way from the beginning.
+
+     If the buffer is narrowed,
+     this command uses the beginning and size
+     of the accessible part of the buffer.
+
+     Don't use this command in Lisp programs!
+     \(goto-char (point-min)) is faster
+     and avoids clobbering the mark."
+       (interactive "P")
+       (or (consp arg)
+           (and transient-mark-mode mark-active)
+           (push-mark))
+       (let ((size (- (point-max) (point-min))))
+         (goto-char (if (and arg (not (consp arg)))
+                        (+ (point-min)
+                           (if (> size 10000)
+                               ;; Avoid overflow for large buffer sizes!
+                               (* (prefix-numeric-value arg)
+                                  (/ size 10))
+                             (/ (+ 10 (* size (prefix-numeric-value arg)))
+                                10)))
+                      (point-min))))
+       (if (and arg (not (consp arg))) (forward-line 1)))
+```
+
+在函数的说明文档中, `\\[universal-argument]`
+
+中的 `\\` 用于第一个 `[` 之前, 这个 `\\` 告诉 Lisp 解释器替换当前绑定到“[...]”的任何键。
+
+### 5.4 复习 ###
+
+`or`
+
+`and`
+
+`&optional`
+
+`prefix-numeric-value` 将 interactive 中的 "P" 传进来的 raw argument 转换为数值
+
+`forward-line`: 将 point 移动到下一行的开头, 如果参数大于1, 那就移动到下几行的开头
+
+`erase-buffer`: 将当前 buffer 清空
+
+`bufferp`: 如果参数是一个 buffer 就返回 `t`, 否则返回 nil
+
+练习题: 编写一个函数, 给一个可选的参数, 如果存在这个参数, 判断它是大于还是小于等于 fill-column, 如果不存在, 默认用 56 去比较
+
+``` elisp
+(defun equal-to-or-less-than-fill-column (&optional arg)
+  "数值是否小于等于 fill-column, 默认是56"
+  (interactive "P")
+  (if (and arg (not (consp arg)))  ;; 如果存在参数 arg 并且不是 cons cell
+      (let (value)                 ;; 局部变量 value
+        (setq value (prefix-numeric-value arg))  ;; 赋值为 数值化的 arg
+        (if (or (equal value fill-column)
+                (<     value fill-column))
+            (message "%d <= %d(fill-column.)" value fill-column)
+            (message "%d > %d(fill-column.)" value fill-column)))
+      (if (or (equal 56 fill-column)
+              (<     56 fill-column))
+          (message "56 <= %d(fill-column)." fill-column)
+          (message "56 > %d(fill-column)." fill-column))))
+```
+
