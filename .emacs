@@ -8,7 +8,7 @@
 ;; 本文件为
 ;; D:/Coding/MyGithub/SCAME/.emacs
 
-
+;;; code:
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 镜像 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;; 配置国内镜像
 (setq package-archives '(("gnu" . "https://mirrors.ustc.edu.cn/elpa/gnu/")
@@ -19,6 +19,8 @@
 ;             '("melpa-stable" . "https://stable.melpa.org/packages/"))
 (package-initialize)
 
+;; package-install 命令自动更新内置包
+(setq package-install-upgrade-built-in t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 显示 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;; 设置显示行号
@@ -37,18 +39,99 @@
 ;; 默认最大化
 (add-to-list 'default-frame-alist '(fullscreen . maximized))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 编程类 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;; CC-mode
-(add-hook 'c-mode-hook '(lambda ()
-        (setq ac-sources (append '(ac-source-semantic) ac-sources))
-        (local-set-key (kbd "RET") 'newline-and-indent)
-        (linum-mode t)
-        (semantic-mode t)))
+
+;;;; neotree
+(use-package neotree
+  :ensure t
+  :config (global-set-key [f8] 'neotree-toggle)  ;; 设置 f8 来打开/关闭 neotree
+  (setq neo-smart-open t))
 
 
-;;;; cedet
-(require 'cedet)
+;;;; Emacs菜单栏下显示文件名
+(use-package centaur-tabs
+  :ensure t
+  :config
+  (setq centaur-tabs-style "bar"
+    centaur-tabs-height 22
+    centaur-tabs-set-icons t
+    centaur-tabs-plain-icons t
+    centaur-tabs-gray-out-icons t
+    centaur-tabs-set-close-button t
+    centaur-tabs-set-modified-marker t
+    centaur-tabs-show-navigation-buttons t
+    centaur-tabs-set-bar 'left
+    centaur-tabs-cycle-scope 'tabs
+    x-underline-at-descent-line nil)
+  (centaur-tabs-headline-match)
+  ;; (setq centaur-tabs-gray-out-icons 'buffer)
+  ;; (centaur-tabs-enable-buffer-reordering)
+  ;; (setq centaur-tabs-adjust-buffer-order t)
+  (centaur-tabs-mode t)
+  (setq uniquify-separator "/")
+  (setq uniquify-buffer-name-style 'forward)
+  (defun centaur-tabs-buffer-groups ()
+    "`centaur-tabs-buffer-groups' control buffers' group rules.
+ Group centaur-tabs with mode if buffer is derived from `eshell-mode' `emacs-lisp-mode' `dired-mode' `org-mode' `magit-mode'.
+ All buffer name start with * will group to \"Emacs\".
+ Other buffer group by `centaur-tabs-get-group-name' with project name."
+    (list
+     (cond
+      ((ignore-errors
+     (and (string= "*xwidget" (substring (buffer-name) 0 8))
+          (not (string= "*xwidget-log*" (buffer-name)))))
+       "Xwidget")
+      ((or (string-equal "*" (substring (buffer-name) 0 1))
+       (memq major-mode '(magit-process-mode
+                  magit-status-mode
+                  magit-diff-mode
+                  magit-log-mode
+                  magit-file-mode
+                  magit-blob-mode
+                  magit-blame-mode
+                  )))
+       "Emacs")
+      ((derived-mode-p 'prog-mode)
+       "Editing")
+      ((derived-mode-p 'dired-mode)
+       "Dired")
+      ((memq major-mode '(helpful-mode
+              help-mode))
+       "Help")
+      ((memq major-mode '(org-mode
+              org-agenda-clockreport-mode
+              org-src-mode
+              org-agenda-mode
+              org-beamer-mode
+              org-indent-mode
+              org-bullets-mode
+              org-cdlatex-mode
+              org-agenda-log-mode
+              diary-mode))
+       "OrgMode")
+      (t
+       (centaur-tabs-get-group-name (current-buffer))))))
+  :hook
+  (dashboard-mode . centaur-tabs-local-mode)
+  (term-mode . centaur-tabs-local-mode)
+  (calendar-mode . centaur-tabs-local-mode)
+  (org-agenda-mode . centaur-tabs-local-mode)
+  (helpful-mode . centaur-tabs-local-mode)
+  :bind
+  ("C-c b" . centaur-tabs-backward)
+  ("C-c n" . centaur-tabs-forward)
+  ("C-c m" . centaur-tabs-forward-group)
+  ("C-c v" . centaur-tabs-backward-group))
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 编程语言通用 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; 自动补全括号
+(electric-pair-mode t)
+
+
+;;;; 括号颜色
+(use-package highlight-parentheses
+  :ensure t
+  :init (highlight-parentheses-mode))
 
 ;;;; 自动补全 company-mode
 (use-package company
@@ -63,17 +146,38 @@
   (setq company-transformers '(company-sort-by-occurrence)))  ;; 根据选择的频率进行排序，读者如果不喜欢可以去掉
 
 
+;;;; flycheck语法纠错
+(use-package flycheck
+  :ensure t
+  :init (global-flycheck-mode))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; C语言 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; CC-mode
+(add-hook 'c-mode-hook '(lambda ()
+        (setq ac-sources (append '(ac-source-semantic) ac-sources))
+        (local-set-key (kbd "RET") 'newline-and-indent)
+        (linum-mode t)
+        (semantic-mode t)))
+
+
+;;;; cedet
+(require 'cedet)
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; Python语言 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 文本类 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;; Markdown Mode
 
 (use-package markdown-mode
   :ensure t
   :mode ("README\\.md\\'" . gfm-mode)
-  :init (setq markdown-command "multimarkdown"))
+  :init (setq markdown-command "multimarkdown")
+  (setq markdown-enable-math t))
 
 ;; enable markdown-enable-math
-(setq markdown-enable-math t)
-
+;;(setq markdown-enable-math t)
 
 
 ;;;; plantuml
@@ -86,4 +190,10 @@
 (setq org-plantuml-jar-path
       (expand-file-name "F:/Linux/plantuml/plantuml-mit-1.2024.0.jar"))
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 命令类 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(fset 'yes-or-no-p 'y-or-n-p)
+
+(provide 'emacs)
+;;; .emacs ends here
 
