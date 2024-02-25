@@ -1,16 +1,16 @@
+;;; -*- coding: utf-8 -*-
 
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; ÅäÖÃÎÄ¼şÀà ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;; ÉèÖÃÅäÖÃÎÄ¼şÖØ¶¨Ïò
-;; ÔÚ ~/.emacs.d/.emacs ÖĞÌí¼ÓÒÔÏÂĞĞ, ¾Í¿ÉÒÔ½«ÅäÖÃÎÄ¼şÖØ¶¨Ïòµ½±¾ÎÄ¼ş
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; é…ç½®æ–‡ä»¶ç±» ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; è®¾ç½®é…ç½®æ–‡ä»¶é‡å®šå‘
+;; åœ¨ ~/.emacs.d/.emacs ä¸­æ·»åŠ ä»¥ä¸‹è¡Œ, å°±å¯ä»¥å°†é…ç½®æ–‡ä»¶é‡å®šå‘åˆ°æœ¬æ–‡ä»¶
 ;; (load-file "D:/Coding/MyGithub/SCAME/.emacs")
 
-;; ±¾ÎÄ¼şÎª
+;; æœ¬æ–‡ä»¶ä¸º
 ;; D:/Coding/MyGithub/SCAME/.emacs
 
 ;;; code:
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; ¾µÏñ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;; ÅäÖÃ¹úÄÚ¾µÏñ
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; é•œåƒ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; é…ç½®å›½å†…é•œåƒ
 (setq package-archives '(("gnu" . "https://mirrors.ustc.edu.cn/elpa/gnu/")
                          ("melpa" . "https://mirrors.ustc.edu.cn/elpa/melpa/")
                          ("nongnu" . "https://mirrors.ustc.edu.cn/elpa/nongnu/")))
@@ -19,35 +19,35 @@
 ;             '("melpa-stable" . "https://stable.melpa.org/packages/"))
 (package-initialize)
 
-;; package-install ÃüÁî×Ô¶¯¸üĞÂÄÚÖÃ°ü
+;; package-install å‘½ä»¤è‡ªåŠ¨æ›´æ–°å†…ç½®åŒ…
 (setq package-install-upgrade-built-in t)
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; ÏÔÊ¾ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;; ÉèÖÃÏÔÊ¾ĞĞºÅ
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; æ˜¾ç¤º ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; è®¾ç½®æ˜¾ç¤ºè¡Œå·
 (global-display-line-numbers-mode 1)
 
 
-;;;; ÉèÖÃÖĞÎÄ×ÖÌå
+;;;; è®¾ç½®ä¸­æ–‡å­—ä½“
 (dolist (charset '(kana han symbol cjk-misc bopomofo))
   (set-fontset-font (frame-parameter nil 'font)
 		    charset
 		    (font-spec :family "WenQuanYi Micro Hei Mono" :size 16)))
 
 
-;;;; frame ³ß´ç
+;;;; frame å°ºå¯¸
 ;(set-frame-position (selected-frame) 0 0)
-;; Ä¬ÈÏ×î´ó»¯
+;; é»˜è®¤æœ€å¤§åŒ–
 (add-to-list 'default-frame-alist '(fullscreen . maximized))
 
 
 ;;;; neotree
 (use-package neotree
   :ensure t
-  :config (global-set-key [f8] 'neotree-toggle)  ;; ÉèÖÃ f8 À´´ò¿ª/¹Ø±Õ neotree
+  :config (global-set-key [f8] 'neotree-toggle)  ;; è®¾ç½® f8 æ¥æ‰“å¼€/å…³é—­ neotree
   (setq neo-smart-open t))
 
 
-;;;; Emacs²Ëµ¥À¸ÏÂÏÔÊ¾ÎÄ¼şÃû
+;;;; Emacsèœå•æ ä¸‹æ˜¾ç¤ºæ–‡ä»¶å
 (use-package centaur-tabs
   :ensure t
   :config
@@ -123,35 +123,35 @@
   ("C-c v" . centaur-tabs-backward-group))
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; ±à³ÌÓïÑÔÍ¨ÓÃ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;; ×Ô¶¯²¹È«À¨ºÅ
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; ç¼–ç¨‹è¯­è¨€é€šç”¨ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; è‡ªåŠ¨è¡¥å…¨æ‹¬å·
 (electric-pair-mode t)
 
 
-;;;; À¨ºÅÑÕÉ«
+;;;; æ‹¬å·é¢œè‰²
 (use-package highlight-parentheses
   :ensure t
   :init (highlight-parentheses-mode))
 
-;;;; ×Ô¶¯²¹È« company-mode
+;;;; è‡ªåŠ¨è¡¥å…¨ company-mode
 (use-package company
-  :ensure t  ;; È·±£±»°²×°
+  :ensure t  ;; ç¡®ä¿è¢«å®‰è£…
   :init (global-company-mode)
   :config
-  (setq company-minimum-prefix-length 1)  ;; Ö»ĞèÇÃ 1 ¸ö×ÖÄ¸¾Í¿ªÊ¼½øĞĞ×Ô¶¯²¹È«
+  (setq company-minimum-prefix-length 1)  ;; åªéœ€æ•² 1 ä¸ªå­—æ¯å°±å¼€å§‹è¿›è¡Œè‡ªåŠ¨è¡¥å…¨
   (setq company-tooltip-align-annotations t)
   (setq company-idle-delay 0.0)
-  (setq company-show-numbers t)  ;; ¸øÑ¡Ïî±àºÅ (°´¿ì½İ¼ü M-1¡¢M-2 µÈµÈÀ´½øĞĞÑ¡Ôñ).
+  (setq company-show-numbers t)  ;; ç»™é€‰é¡¹ç¼–å· (æŒ‰å¿«æ·é”® M-1ã€M-2 ç­‰ç­‰æ¥è¿›è¡Œé€‰æ‹©).
   (setq company-selection-wrap-around t)
-  (setq company-transformers '(company-sort-by-occurrence)))  ;; ¸ù¾İÑ¡ÔñµÄÆµÂÊ½øĞĞÅÅĞò£¬¶ÁÕßÈç¹û²»Ï²»¶¿ÉÒÔÈ¥µô
+  (setq company-transformers '(company-sort-by-occurrence)))  ;; æ ¹æ®é€‰æ‹©çš„é¢‘ç‡è¿›è¡Œæ’åºï¼Œè¯»è€…å¦‚æœä¸å–œæ¬¢å¯ä»¥å»æ‰
 
 
-;;;; flycheckÓï·¨¾À´í
+;;;; flycheckè¯­æ³•çº é”™
 (use-package flycheck
   :ensure t
   :init (global-flycheck-mode))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; CÓïÑÔ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; Cè¯­è¨€ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;; CC-mode
 (add-hook 'c-mode-hook '(lambda ()
         (setq ac-sources (append '(ac-source-semantic) ac-sources))
@@ -164,10 +164,10 @@
 (require 'cedet)
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; PythonÓïÑÔ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; Pythonè¯­è¨€ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; ÎÄ±¾Àà ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; æ–‡æœ¬ç±» ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;; Markdown Mode
 
 (use-package markdown-mode
@@ -191,9 +191,15 @@
       (expand-file-name "F:/Linux/plantuml/plantuml-mit-1.2024.0.jar"))
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; ÃüÁîÀà ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; todotxt
+(use-package todotxt
+  :mode ("todo.txt'" . todotxt-mode)
+;  :init (todotxt-mode)
+  :config (setq todotxt-file "D:/Coding/Todo/todo.txt"))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; å‘½ä»¤ç±» ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (fset 'yes-or-no-p 'y-or-n-p)
 
 (provide 'emacs)
 ;;; .emacs ends here
-
