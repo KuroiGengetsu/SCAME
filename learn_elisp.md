@@ -3011,26 +3011,1203 @@ Emacs Lisp程序更多地使用字符串而不是单个字符。
 
 [String and Character Basics](https://www.gnu.org/software/emacs/manual/html_node/elisp/String-Basics.html)
 
+字符是一个Lisp对象，它表示文本中的单个字符。
+
+在Emacs Lisp中，字符是简单的整数;整数是否为字符仅取决于如何使用它。
+
+有关Emacs中字符表示的详细信息，请参阅字符代码 Character Codes。
+
+字符串是固定的字符序列。
+
+它是一种称为数组的序列类型，这意味着它的长度是固定的，一旦创建就不能改变(参见序列Sequences、数组Arrays和向量Vectors)。
+
+与C语言不同的是，Emacs Lisp字符串不以特殊字符代码结束。
+
+由于字符串是数组，因此也是序列，您可以使用在序列、数组和向量中记录的通用数组和序列函数对它们进行操作。
+
+例如，您可以使用函数 `aref` 访问字符串中的单个字符(参见对数组进行操作的函数 Functions that Operate on Arrays)。
+
+Emacs字符串(以及缓冲区)中的非ascii字符有两种文本表示形式:单字节和多字节。
+
+对于大多数Lisp编程，您不需要关心这两种表示。
+
+有关详细信息，请参阅文本表示 Text Representations。
+
+有时 键序列 key sequences 表示为单字节字符串 unibyte strings。
+
+当单字节字符串是键序列时，128到255范围内的字符串元素表示元字符 meta characters(大整数 large integers)，而不是128到255范围内的字符代码。
+
+字符串不能包含带有hyper、super或alt修饰符的字符;它们可以保存ASCII控制字符，但不能保存其他控制字符。
+
+它们不区分ASCII控制字符中的大小写。
+
+如果要将此类字符存储在序列中，例如键序列，则必须使用vector而不是string。
+
+有关键盘输入字符的详细信息，请参阅字符类型 Character Type。
+
+字符串用于保存正则表达式很有用。
+
+您还可以使用 `string-match` 对字符串匹配正则表达式(参见正则表达式搜索 Regular Expression Searching)。
+
+函数 `match-string` (参见简单匹配数据访问 Simple Match Data Access)和 `replace-match` (参见替换匹配的文本 Replacing the Text that Matched) 对于在匹配正则表达式后分解和修改字符串非常有用。
+
+与缓冲区一样，字符串可以包含其中字符的文本属性以及字符本身。
+
+参见文本属性 Text Properties。
+
+所有将文本从字符串复制到缓冲区或其他字符串的Lisp原语也复制被复制字符的属性。
+
+有关显示字符串或将字符串复制到缓冲区的函数的信息，请参阅文本 Text。
+
+有关字符和字符串语法的信息，请参见字符类型和字符串类型 Character Type and String Type。
+
+有关在文本表示之间进行转换以及对字符代码进行编码和解码的函数，请参阅非ascii字符 Non-ASCII Characters。
+
+另外，请注意，长度不应该用于计算显示字符串的宽度;请使用 `string-width`(参见显示文本的大小 Size of Displayed Text)。
+
 ### 4.2 Predicates for Strings ###
+
+有关一般序列和数组谓词的详细信息，请参见序列、数组和向量以及数组。
+
+#### 函数: `stringp object` ####
+
+如果object是字符串，则返回t，否则返回nil。
+
+#### 函数: `string-or-null-p object` ####
+
+如果object是字符串或nil，这个函数返回t。否则返回nil。
+
+#### 函数: `char-or-string-p object` ####
+
+如果object是字符串或字符(即整数)，此函数返回t，否则返回nil。
 
 ### 4.3 Creating Strings ###
 
+下面的函数可以从零开始创建字符串，或者将字符串组合在一起，或者将它们分开。
+
+(对于基于修改后的其他字符串的内容创建字符串的函数，如 `string-replace` 和 `replace-regexp-in-string`，请参见Search and Replace。)
+
+
+#### 函数: `make-string count character &optional multibyte` ####
+
+这个函数返回一个由重复数个字符组成的字符串。
+
+如果count为负，则出现错误。
+
+``` Elisp
+(make-string 5 ?x)
+     ⇒ "xxxxx"
+(make-string 0 ?x)
+     ⇒ ""
+```
+
+通常，如果character是一个ASCII字符，则结果是一个单字节字符串。
+
+但如果可选参数multibyte非nil，则该函数将生成一个多字节字符串。
+
+当您以后需要将结果与非ascii字符串连接或用非ascii字符替换其中的一些字符时，这很有用。
+
+与此比较的其他函数包括 `make-vector`(参见Vectors)和 `make-list`(参见构建Cons单元格和列表 Building Cons Cells and Lists)。
+
+#### 函数: `string &rest characters` ####
+
+这将返回一个包含字符characters的字符串。
+
+``` Elisp
+(string ?a ?b ?c)
+     ⇒ "abc"
+```
+
+#### 函数: `substring string &optional start end` ####
+
+此函数返回一个新字符串，该字符串由字符串中的字符组成，范围从(包括)索引开始处的字符到(但不包括)索引结束处的字符。
+
+`[start end)`
+
+第一个字符在索引0处。
+
+只有一个参数，这个函数只是复制string。
+
+``` Elisp
+(substring "abcdefg" 0 3)
+     ⇒ "abc"
+```
+
+在上面的例子中，“a”的索引是0，“b”的索引是1，“c”的索引是2。
+
+索引3(字符串中的第四个字符)标记子字符串被复制到的字符位置。
+
+因此，"abc" 是从字符串 "abcdefg" 中复制的。
+
+负数从字符串的末尾开始计数，因此−1表示字符串最后一个字符的索引。例如:
+
+``` Elisp
+(substring "abcdefg" -3 -1)
+     ⇒ "ef"
+```
+
+在这个例子中，e 的索引是 -3，f 的索引是 -2，g 的索引是 -1。
+
+因此，包含 e 和 f，不包括 g。
+
+当nil用于end时，它代表字符串的长度。因此,
+
+``` Elisp
+(substring "abcdefg" -3 nil)
+     ⇒ "efg"
+```
+
+省略参数end等同于指定nil。
+
+由此可见(substring string 0)返回string的所有副本。
+
+但是我们推荐使用复制序列 `copy-sequence` (参见序列)。
+
+如果从字符串复制的字符具有文本属性，则这些属性也会复制到新字符串中。参见文本属性 Text Properties。
+
+Substring还接受一个vector作为第一个参数。例如:
+
+``` Elisp
+(substring [a b (c) "d"] 1 3)
+     ⇒ [b (c)]
+```
+
+如果start不是整数，或者end既不是整数也不是nil，则会提示类型参数错误 `wrong-type-argument` error。
+
+如果start表示end后面的字符，或者任一整数超出string的范围，则会发出 `args-out-of-range` 错误信号。
+
+将此函数与 `buffer-substring`(请参阅检查缓冲区内容 Examining Buffer Contents)进行对比，后者返回一个字符串，其中包含当前缓冲区中文本的一部分。
+
+字符串的开始位置是索引0，而缓冲区的开始位置是索引1。
+
+#### 函数: `substring-no-properties string &optional start end` ####
+
+它的工作原理类似于substring，但会丢弃值中的所有文本属性。
+
+此外，start也可以省略或为nil，这相当于0。
+
+因此，`(substring-no-properties string)` 返回一个删除了所有文本属性的string副本。
+
+#### 函数: `concat &rest sequences` ####
+
+这个函数返回一个字符串，由传递给它的参数中的字符组成(如果有的话，还包括它们的文本属性)。
+
+参数可以是字符串、数字列表或数字向量;他们自己并没有改变。
+
+如果concat没有接受任何参数，则返回一个空字符串。
+
+``` Elisp
+(concat "abc" "-def")
+     ⇒ "abc-def"
+(concat "abc" (list 120 121) [122])
+     ⇒ "abcxyz"
+;; nil is an empty sequence.
+(concat "abc" nil "-def")
+     ⇒ "abc-def"
+(concat "The " "quick brown " "fox.")
+     ⇒ "The quick brown fox."
+(concat)
+     ⇒ ""
+```
+
+这个函数并不总是分配一个新的字符串。
+
+建议调用者不依赖于结果是一个新字符串，也不依赖于它等于一个现有字符串。
+
+特别是，改变返回值可能会无意中改变另一个字符串，改变程序中的常量字符串，甚至引发错误。
+
+若要获得可以安全更改的字符串，请对结果使用复制序列。
+
+有关其他连接函数的信息，请参见映射函数Mapping Functions中的 `mapconcat` 描述，向量函数Functions for Vectors中的`vconcat`描述，以及构建Cons单元格和列表 Building Cons Cells and Lists 中的`append`描述。
+
+有关将单个命令行参数连接成一个字符串以用作shell命令，请参阅组合和引号字符串。 combine-and-quote-strings
+
+#### 函数: `split-string string &optional separators omit-nulls trim` ####
+
+这个函数基于正则表达式分隔符 `separators`(参见正则表达式)将字符串分割成子字符串。分隔符的每个匹配定义了一个分裂点;分隔点之间的子字符串被制作成一个列表，并返回该列表。
+
+如果`separators`为nil(或省略)，则默认为 `split-string-default-separators` 的值，并且该函数的行为就像 `omit-nulls` 为t一样。
+
+如果 `omit-nulls` 为nil(或省略)，则只要分隔符有两个连续匹配，或者匹配紧邻字符串的开始或结束，结果将包含空字符串。如果 `omit-null` 为t，则从结果中省略这些空字符串。
+
+如果可选参数 `trim` 非nil，则它应该是一个正则表达式，从每个子字符串的开始和结束匹配要修剪的文本。如果微调使子字符串为空，则将其视为空。
+
+如果您需要将字符串拆分为适合于 `call-process` 或 `start-process` 的单个命令行参数列表，请参阅 `split-string-and-unquote`。
+
+``` Elisp
+(split-string " two words ")
+     ⇒ ("two" "words")
+```
+
+结果不是 `( "" "two" "words" "")`，这很少有用。
+
+如果您需要这样的结果，请为分隔符使用显式值:
+
+``` Elisp
+(split-string "  two words "
+              split-string-default-separators)
+     ⇒ ("" "two" "words" "")
+```
+
+``` Elisp
+(split-string "Soup is good food" "o")
+     ⇒ ("S" "up is g" "" "d f" "" "d")
+(split-string "Soup is good food" "o" t)
+     ⇒ ("S" "up is g" "d f" "d")
+(split-string "Soup is good food" "o+")
+     ⇒ ("S" "up is g" "d f" "d")
+```
+
+空匹配计数，除了 `split-string` 在使用非空匹配到达字符串末尾或字符串为空时不会查找最后的空匹配:
+
+``` Elisp
+(split-string "aooob" "o*")
+     ⇒ ("" "a" "" "b" "")
+(split-string "ooaboo" "o*")
+     ⇒ ("" "" "a" "b" "")
+(split-string "" "")
+     ⇒ ("")
+```
+
+但是，当分隔符可以匹配空字符串时，`omit-null` 通常是t，因此前面三个示例中的微妙之处很少相关:
+
+``` Elisp
+(split-string "Soup is good food" "o*" t)
+     ⇒ ("S" "u" "p" " " "i" "s" " " "g" "d" " " "f" "d")
+(split-string "Nice doggy!" "" t)
+     ⇒ ("N" "i" "c" "e" " " "d" "o" "g" "g" "y" "!")
+(split-string "" "" t)
+     ⇒ nil
+```
+
+分隔符的某些 **非贪婪** 值可能更喜欢空匹配而不是非空匹配，这种行为有些奇怪，但可以预测。同样，这样的值在实践中很少出现:
+
+``` Elisp
+(split-string "ooo" "o*" t)
+     ⇒ nil
+(split-string "ooo" "\\|o+" t)
+     ⇒ ("o" "o" "o")
+(split-string "ooo" "o+" t)
+     ⇒ nil
+(split-string "ooo" "\\o+" t)
+     ⇒ nil
+(split-string "ooo" "|o+" t)
+     ⇒ ("ooo")
+```
+
+#### 变量: `split-string-default-separators` ####
+
+分割字符串的分隔符的默认值。它通常的值是`"“[ \f\t\n\r\v]+`。
+
+#### 函数: `string-clean-whitespace string` ####
+
+清除字符串中的空白，方法是将空白段折叠为单个空格字符，以及从字符串的开始和结束处删除所有空白。
+
+#### 函数: `string-trim-left string &optional regexp` ####
+
+从string中删除与regexp匹配的开头文本。`regexp`默认为 `[\t\n\r]+`。
+
+#### 函数: `string-trim-right string &optional regexp` ####
+
+从string中删除与regexp匹配的尾随文本。`regexp`默认为 `[ \t\n\r]+`。
+
+#### 函数: `string-trim string &optional trim-left trim-right` ####
+
+从字符串中删除与 `term-left` 匹配的开头文本和与 `trim-right` 匹配的尾随文本。两个 `regexp` 默认为 `[ \t\n\r]+`。
+
+#### 函数: `string-fill string length` ####
+
+尝试对字符串进行换行，使行长度不超过length。填充只在空白边界上完成。如果有个别单词比 `length` 长，这些单词不会被缩短。
+
+``` Elisp
+(string-fill "aaa bbb ccc ddd" 3)
+;   => "aaa
+bbb
+ccc
+ddd"
+```
+
+#### 函数: `string-limit string length &optional end coding-system` ####
+
+如果 `string` 小于 `length` 字符，则按原样返回string。否则，返回由第一个 `length` 字符组成的 `string` 的子字符串。如果给出了可选的 `end` 形参，则返回 `length` 为最后一个字符的字符串。
+
+如果 `encoding-system` 为非空，则字符串将在限制之前进行编码，结果将是一个小于 `length` 字节的单字节字符串unibyte string。如果 `string` 包含被编码成几个字节的字符(例如，当使用utf-8时)，则生成的单字节字符串永远不会在字符表示的中间被截断。
+
+此函数以字符或字节为单位测量字符串长度，因此如果您需要缩短字符串以用于显示目的，则通常不合适;使用 `truncate-string-to-width` 或 `window-text-pixel-size` 或 `string-glyph-split` 代替(参见显示文本的大小 Size of Displayed Text)
+
+``` Elisp
+(string-limit "abcdef" 5)
+;        => "abcde"
+(string-limit "谔谔呃呃饿饿" 5)
+;        => "谔谔呃呃饿"
+```
+
+#### 函数: `string-lines string &optional omit-nulls keep-newlines` ####
+
+将字符串按 **换行符** 分隔为字符串列表。如果可选参数 `omit-nulls` 非nil，则从结果中删除空行。如果可选参数 `keep-newlines` 非nil，则不要从结果字符串中删除尾随的换行符。
+
+#### 函数: `string-pad string length &optional padding start` ####
+
+使用 `padding` 作为填充字符将字符串填充为给定的长度。填充默认为空格字符。如果`string`大于`length`，则不填充。如果`start`为nil或省略，则将 `padding` 添加到string的字符中，如果它是非nil，则将 `padding` 添加到string的字符中。
+
+``` Elisp
+(string-pad "0b1011" 10 ?0)
+;    =>  "0b10110000"
+```
+
+#### 函数: `string-chop-newline string` ####
+
+从字符串中删除结尾换行符(如果有的话)。
+
+``` Elisp
+(string-chop-newline "aaa\n")
+;    => "aaa"
+```
+
 ### 4.4 Modifying Strings ###
+
+您可以通过本节中描述的操作更改可变字符串的内容。见
+ Mutability。
+
+修改现有字符串内容的最基本方法是使用 `aset`(参见对数组进行操作的函数 Functions that Operate on Arrays)。
+
+`(aset string idx char)` 将字符存储为字符索引 idx 处的字符串。如果需要，它会自动将纯ascii字符串转换为多字节字符串(参见文本表示)，但我们建议始终确保字符串是多字节的(例如，通过使用字符串到多字节，参见转换文本表示)，如果char是非ascii字符，而不是原始字节。
+
+一个更强大的函数是 `store-substring`
+
+#### 函数: `store-substring string idx obj` ####
+
+这个函数通过存储从字符索引 `idx` 开始的 `obj` 来改变指定字符串的部分内容。参数 `obj` 可以是一个字符(在这种情况下，函数的行为与 `aset` 完全相同)或一个(较小的)字符串。如果obj是一个多字节字符串，我们建议确保string也是多字节的，即使它是纯ascii。
+
+由于不可能更改现有字符串中的字符数，因此如果obj包含的字符多于从字符索引idx开始的字符串所能容纳的字符，则会产生错误。
+
+``` Elisp
+(store-substring "abc" 2 ?d)
+;    => "abd"
+```
+
+#### 函数: `clear-string string` ####
+
+要清除包含密码的字符串，使用clear-string
+
+这将使 `string` 成为一个单字节字符串，并将其内容清除为零。它也可以改变字符串的长度。
 
 ### 4.5 Comparison of Characters and Strings ###
 
+
+#### 函数: `char-equal character1 character2` ####
+
+如果参数表示相同的字符，此函数返回t，否则返回nil。如果 `case-fold-search` 为非nil，则此函数忽略大小写差异。
+
+``` Elisp
+(char-equal ?x ?x)
+     ⇒ t
+(let ((case-fold-search nil))
+  (char-equal ?x ?X))
+     ⇒ nil
+(char-equal ?x ?X)
+     ⇒ t
+```
+
+#### 函数: `string= string1 string2` ####
+
+如果两个字符串的字符完全匹配，该函数返回t。Symbols也可以作为参数，在这种情况下使用符号名。大小写总是很重要的，不管 `case-fold-search` 如何。
+
+这个函数等价于equal，用于比较两个字符串(参见相等谓词)。特别是，两个字符串的文本属性被忽略;如果需要区分仅在文本属性上不同的字符串，请使用 `equal-including-properties`。然而，与equal不同的是，如果参数中的任何一个不是字符串或符号，`string=` 产生错误。
+
+``` Elisp
+(string= "abc" "abc")
+     ⇒ t
+(string= "abc" "ABC")
+     ⇒ nil
+(string= "ab" "ABC")
+     ⇒ nil
+```
+
+当且仅当它们包含相同的字符代码序列, 单字节字符串和多字节字符串在 `string=` 才相等的, 且都在0-127 (ASCII)范围内。参见文本表示。
+
+#### 函数: `string-equal string1 string2` ####
+
+等同于 `string=`
+
+#### 函数: `string-equal-ignore-case string1 string2` ####
+
+`string-equal-ignore-case` 比较忽略大小写差异的字符串，例如当 `case-fold-search`为t时的 `char-equal`。
+
+#### 函数: `string-collate-equalp string1 string2 &optional locale ignore-case` ####
+
+如果 `string1` 和 `string2` 相对于 指定语言环境 (默认为当前系统语言环境)的排序规则相等，则此函数返回t。
+
+排序规则 collation rules 不仅由`string1`和`string2`中包含的字符的字典顺序 lexicographic order 决定，而且还由有关这些字符之间关系的进一步规则决定。通常，它是由运行Emacs的语言环境和与Emacs相关联的标准C库定义的。
+
+有关排序规则及其区域依赖关系的详细信息，请参见Unicode排序算法 The Unicode Collation Algorithm。一些标准C库，如GNU C库(又名glibc)实现了Unicode排序算法的大部分，并使用相关的语言环境数据、公共语言环境数据存储库或CLDR。
+
+例如，具有不同码位但含义相同的字符，例如不同的重音Unicode字符，在某些地区可能被认为是相等的:
+
+``` Elisp
+(string-collate-equalp (string ?\uFF40) (string ?\u1FEF))
+     ⇒ t
+```
+
+可选参数`locale`(一个字符串)覆盖用于排序的当前区域设置标识符的设置。该值与系统有关;区域设置“en_US”。`UTF-8` 适用于POSIX系统，而它将是，例如，`enu_USA`。在MS-Windows系统上是1252”。
+
+如果 `ignore-case` 为非空值，则通过将字符转换为小写来不区分大小写地比较字符。但是，如果底层系统库没有提供特定于语言环境的排序规则，则此函数会退回到 `string-equal`，在这种情况下忽略 `ignore-case` 参数，并且比较将始终区分大小写。
+
+要在MS-Windows系统上模拟unicode兼容的排序，请将 `w32-collate-ignore-punctuation` 绑定到一个非nil值，因为区域设置的代码集部分在MS-Windows上不能为“UTF-8”。
+
+如果您的系统不支持语言环境，则此函数的行为类似string-equal。
+
+不要使用这个函数来比较文件名是否相等，因为文件系统通常不支持排序实现的字符串的语言等价性。
+
+#### 函数: `string< string1 string2` ####
+
+这个函数一次比较两个字符串中的一个字符。它同时扫描两个字符串，以查找第一对不匹配的对应字符。如果这两个字符中较小的字符是来自string1的字符，则string1较小，此函数返回t。如果较小的字符是来自string2的字符，则string1较大，此函数返回nil。如果两个字符串完全匹配，则值为nil。
+
+根据字符代码对字符进行比较。请记住，在ASCII字符集中，小写字母比大写字母具有更高的数值;数字和许多标点符号的数值比大写字母的数值要低。一个ASCII字符小于任何非ASCII字符;单字节非ascii字符总是小于任何多字节非ascii字符(参见文本表示)。
+
+``` Elisp
+(string< "abc" "abd")
+     ⇒ t
+(string< "abd" "abc")
+     ⇒ nil
+(string< "123" "abc")
+     ⇒ t
+```
+
+当两个字符串的长度不同，并且它们匹配到string1的长度时，结果为t。如果它们匹配到string2的长度，结果为nil。没有字符的字符串小于任何其他字符串。
+
+``` Elisp
+(string< "" "abc")
+     ⇒ t
+(string< "ab" "abc")
+     ⇒ t
+(string< "abc" "")
+     ⇒ nil
+(string< "abc" "ab")
+     ⇒ nil
+(string< "" "")
+     ⇒ nil
+```
+
+符号也可以作为参数，在这种情况下，它们的打印名称将被比较。
+
+#### 函数: `string-lessp string1 string2` ####
+
+同 `string<`
+
+#### 函数: `String-greaterp string1 string2` ####
+
+这个函数返回以相反顺序比较string1和string2的结果，也就是说，它相当于调用 `(string-lessp string2 string1)`。
+
+#### 函数: `string-collate-lessp string1 string2 &optional locale ignore-case` ####
+
+如果按照指定语言环境的排序顺序string1小于string2(默认为当前系统语言环境)，则此函数返回t。排序顺序不仅由string1和string2中包含的字符的字典顺序决定，还由有关这些字符之间关系的进一步规则决定。通常，它是由运行Emacs的地区环境和Emacs所链接的标准C库定义的。
+
+例如，标点符号和空白字符可能会在排序时被忽略(参见序列):
+
+``` Elisp
+(sort (list "11" "12" "1 1" "1 2" "1.1" "1.2") 'string-collate-lessp)
+     ⇒ ("11" "1 1" "1.1" "12" "1 2" "1.2")
+```
+
+这种行为是系统相关的;例如，无论语言环境如何，标点符号和空白都不会在Cygwin上被忽略。
+
+可选参数locale(一个字符串)覆盖用于排序的当前区域设置标识符的设置。该值与系统有关;区域设置“en_US”。UTF-8”适用于POSIX系统，而它将是，例如，“enu_USA”。在MS-Windows系统上是1252”。"POSIX"或"C"的locale值让string-collate-lessp的行为类似string-lessp:
+
+``` Elisp
+(sort (list "11" "12" "1 1" "1 2" "1.1" "1.2")
+      (lambda (s1 s2) (string-collate-lessp s1 s2 "POSIX")))
+     ⇒ ("1 1" "1 2" "1.1" "1.2" "11" "12")
+```
+
+如果ignore-case为非空值，则通过将字符转换为小写来不区分大小写地比较字符。但是，如果底层系统库不提供特定于语言环境的排序规则，则此函数会退回到string-lessp，在这种情况下忽略ignore-case参数，并且比较将始终区分大小写。
+
+要在MS-Windows系统上模拟unicode兼容的排序，请将w32-collate-ignore-punctuation绑定到一个非nil值，因为区域设置的代码集部分在MS-Windows上不能为“UTF-8”。
+
+如果您的系统不支持语言环境，则此函数的行为类似string-lessp。
+
+#### 函数: `string-version-lessp string1 string2` ####
+
+此函数按字典顺序比较字符串，但它将**数字字符序列视为由十进制数字组成**，然后比较数字。因此，根据这个谓词，' foo2.png '比' foo12.png '“小”，即使' 12 '在字典顺序上比' 2 '“小”。
+
+``` Elisp
+(string-version-lessp "aaa11" "aaa0")
+;    => nil
+(string-version-lessp "filename14" "filename5")
+;    => nil
+```
+
+#### 函数: `string-prefix-p string1 string2 &optional ignore-case` ####
+
+如果string1是string2的前缀，则此函数返回非nil;也就是说，如果string2从string1开始。如果可选参数ignore-case非nil，比较会忽略大小写差异。
+
+``` Elisp
+(string-prefix-p "aa" "aabc")
+;    => t
+```
+
+#### 函数: `string-suffix-p suffix string &optional ignore-case` ####
+
+如果`suffix`是string的后缀，则此函数返回非nil;例如，如果 `string` 以 `suffix` 结尾。如果可选参数ignore-case非nil，比较会忽略大小写差异。
+
+``` Elisp
+(string-suffix-p "name" "filename")
+;    => t
+```
+
+#### 函数: `string-search needle haystack &optional start-pos` ####
+
+返回 `haystack` 中 `needle` 的第一个实例的位置，这两个实例都是字符串。
+
+如果 `start-pos` 非nil，则从 `haystack` 中的该位置开始搜索。如果没有找到匹配项，则返回nil。这个函数在进行比较时只考虑字符串中的字符;文本属性将被忽略。匹配总是区分大小写的。
+
+#### 函数: `compare-strings string1 start1 end1 string2 start2 end2 &optional ignore-case` ####
+
+这个函数比较string1的指定部分和string2的指定部分。string1的指定部分从索引start1(含)运行到索引end1(不含);start1的Nil表示字符串的开始，而end1的Nil表示字符串的长度。同样，string2的指定部分从索引start2一直运行到索引end2。
+
+字符串通过其字符的数值进行比较。例如，如果 `str1` 的第一个不同字符具有较小的数值，则认为str1小于str2。如果ignore-case非nil，字符在比较之前会使用当前缓冲区的大小写表(请参阅大小写表)将其转换为大写。单字节字符串被转换为多字节进行比较(参见文本表示)，因此一个单字节字符串和它到多字节的转换总是被视为相等的。
+
+如果两个字符串的指定部分匹配，则该值为t。否则，该值为一个整数，表示有多少个前导字符是一致的，哪个字符串更少。它的绝对值是1加上两个字符串开头一致的字符数。如果string1(或其指定的部分)较小，则符号为负。
+
+#### 函数: `string-distance string1 string2 &optional bytecompare` ####
+
+这个函数返回源字符串string1和目标字符串string2之间的 **Levenshtein距离**。Levenshtein距离是将源字符串转换为目标字符串所需的单字符更改(删除、插入或替换)的数量;这是字符串之间编辑距离的一种可能定义。
+
+字符串的字母大小写对于计算的距离很重要，但它们的文本属性将被忽略。如果可选参数byteccompare非nil，则该函数以字节而不是字符计算距离。逐字节比较使用字符的内部Emacs表示，因此对于包含原始字节的多字节字符串将产生不准确的结果(参见文本表示);如果您需要原始字节的精确结果，则通过对它们进行编码(参见显式编码和解码)使字符串成为单字节。
+
+#### 函数: `assoc-string key alist &optional case-fold` ####
+
+这个函数的工作方式类似于 `assoc`，除了key必须是字符串或符号，并且比较是使用 `compare-strings` 完成的。
+
+在测试之前将符号转换为字符串。如果 `case-fold` 为非nil，则在比较之前将key和list中的元素转换为大写。与assoc不同的是，这个函数也可以匹配列表中字符串或符号而不是 `conses` 的元素。特别是，list可以是字符串或符号的列表，而不是实际的列表。参见关联列表 Association Lists。
+
+另请参阅比较文本中的 `compare-buffer-substrings` 函数，了解比较缓冲区中的文本的方法。`string-match` 函数用于将正则表达式与字符串进行匹配，可用于某种字符串比较;请参见正则表达式搜索。
+
 ### 4.6 Conversion of Characters and Strings ###
+
+介绍字符、字符串和整数之间转换的函数。
+
+`format`(参见格式化字符串) 和 `prin1-to-string`(参见输出函数 Output Functions)也可以将Lisp对象转换为字符串。
+
+`read-from-string`(参见输入函数 Input Functions)可以将Lisp对象的字符串表示转换为对象。
+
+`string-to-multibute` 和 `string-to-unibyte` 函数转换字符串的文本表示(参见转换文本表示 Converting Text Representations)。
+
+有关生成文本字符的文本描述和一般输入事件(`single-key-description`和 `text-char-description`)的函数，请参阅 Documentation。它们主要用于生成帮助消息。
+
+
+#### 函数: `number-to-string number` ####
+
+这个函数返回一个字符串，该字符串由数字的十进制表示形式组成。如果参数为负，则返回值以负号开头。
+
+``` Elisp
+(number-to-string 256)
+     ⇒ "256"
+
+(number-to-string -23)
+     ⇒ "-23"
+
+(number-to-string -23.5)
+     ⇒ "-23.5"
+```
+
+`int-to-string`是此函数的半废弃别名。
+
+另请参阅格式化字符串中的format函数 Formatting Strings。
+
+#### 函数: `string-to-number string &optional base` ####
+
+这个函数返回字符串中字符的数值。如果base非nil，则它必须是2到16(含16)之间的整数，整数将以该基数进行转换。如果以零为基数，则使用以10为基数。浮点转换只适用于十进制;我们还没有为浮点数实现其他的小数，因为那要做更多的工作，而且似乎没什么用。
+
+解析跳过字符串开头的空格和制表符，然后读取尽可能多的字符串，将其解释为给定基数中的数字。(在某些系统上，它会忽略开头的其他空白，而不仅仅是空格和制表符。)如果string不能解释为数字，则此函数返回0。
+
+``` Elisp
+(string-to-number "256")
+     ⇒ 256
+(string-to-number "25 is a perfect square.")
+     ⇒ 25
+(string-to-number "X256")
+     ⇒ 0
+(string-to-number "-4.5")
+     ⇒ -4.5
+(string-to-number "1e5")
+     ⇒ 100000.0
+```
+
+`string-to-int` 是该函数的过时别名。
+
+#### 函数: `char-to-string character` ####
+
+这个函数返回一个包含一个字符的新字符串，character。这个函数是半废弃的，因为函数字符串更通用。参见创建字符串。
+
+#### 函数: `string-to-char string` ####
+
+这个函数返回字符串中的第一个字符。这与 `(aref string 0)` 基本相同，除了如果字符串为空则返回0。(当字符串的第一个字符为空字符时，该值也为0,ASCII码为0。)如果这个函数看起来不太有用，将来可能会被删除。
+
+#### 函数: `concat` ####
+
+这个函数将vector或list转换为string对象。参见创建字符串。
+
+#### 函数: `vconcat` ####
+
+这个函数将字符串转换为向量。参见向量函数。
+
+#### 函数: `append` ####
+
+这个函数将字符串转换为列表。参见构建Cons单元格和列表 Building Cons Cells and Lists。
+
+#### 函数: `byte-to-string` ####
+
+这个函数将一个字节的字符数据转换为一个单字节字符串。参见转换文本表示。 Converting Text Representations
 
 ### 4.7 Formatting Strings ###
 
+[Formatting Strings](https://www.gnu.org/software/emacs/manual/html_node/elisp/Formatting-Strings.html)
+
+*format* 意味着通过在常量字符串的不同位置替换计算值来构造字符串。这个常量字符串控制其他值的打印方式，以及它们出现的位置;它被称为格式字符串 *format string* 。
+
+格式化对于计算要显示的消息通常很有用。事实上，函数`message`和`error`提供了与这里描述的相同的格式化特性;它们与格式化消息的不同之处在于它们如何使用格式化的结果。
+
+#### 函数: `format string &rest objects` ####
+
+这个函数返回一个等于string的字符串，用相应对象的编码替换任何格式规范。参数对象是要格式化的计算值。
+
+除了格式规范之外，string中的字符会被直接复制到输出中，包括它们的文本属性(如果有的话)。格式规范的任何文本属性都被复制到参数对象的生成的字符串表示形式中。
+
+输出字符串不需要重新分配。例如，如果x是字符串"foo"，表达式 `(eq x (format x))` 和 `(eq x (format "%s" x))` 可能都会产生t。
+
+#### 函数: `format-message string &rest objects` ####
+
+这个函数的作用类似于format，除了它还根据 `text-quotes-style` 的值转换字符串中的任何重音符号(反引号)和撇号(引号)。
+
+通常，格式中的重音和撇号会转换为匹配的弯曲引号，例如
+
+"Missing `%s'" 会是 “Missing 'foo'”。
+
+请参阅文本引用风格 Text Quoting Style，了解如何影响或抑制这种翻译。
+
+#### 格式规范 format specification ####
+
+格式规范是以 `%` 开头的字符序列。因此，如果string中有 `%d`，则format函数将其替换为要格式化的值之一(参数对象之一)的打印表示形式。例如:
+
+``` Elisp
+(format "The value of fill-column is %d." fill-column)
+     ⇒ "The value of fill-column is 72."
+```
+
+由于format将 `%` 字符解释为格式规范，因此永远不要将任意字符串作为第一个参数传递。当字符串由一些Lisp代码生成时尤其如此。除非已知字符串从不包含任何 `%` 字符，否则将下面描述的 `%s` 作为第一个参数，并将字符串作为第二个参数，如下所示:
+
+``` Elisp
+(format "%s" arbitrary-string)
+```
+
+某些格式规范需要特定类型的值。如果您提供的值不符合要求，则会发出错误信号。
+
+以下是有效格式规范的表格:
+
+##### `%s` 不带引号的字符串 #####
+
+将规范替换为对象的打印表示形式，不加引号(即使用`princ`，而不是`prin1` -参见输出函数 Output Functions)。因此，字符串仅由其内容表示，不含 `"` 字符，符号也不含 `\` 字符。
+
+如果对象是字符串，则将其文本属性复制到输出中。`%s` 本身的文本属性也被复制，但对象的文本属性优先。
+
+``` Elisp
+(format "This is a %s." "apple")
+;  "This is a apple."
+```
+
+##### `%S` 带引号的字符串 #####
+
+将规范替换为对象的打印表示形式，并加上引号(即使用`prin1` -参见输出函数)。因此，字符串被 `"` 字符包围，`\` 字符出现在特殊字符之前的必要位置。
+
+``` Elisp
+(format "We call it %S." "banana")
+;  "We call it \"banana\"."
+```
+
+##### `%o` 八进制 #####
+
+将该规范替换为整数的以8为基数的表示形式。负整数的格式依赖于平台。该对象还可以是格式化为整数的浮点数，省略任何分数。
+
+``` Elisp
+(format "It is #o%o." 16)   ; "It is #o20."
+(format "It is #o%o." -1)   ; "It is #o-1."
+(format "It is #o%o." 0.1)  ; "It is #o0."
+(format "It is #o%o." 3.4)  ; "It is #o3."
+```
+
+##### `%d` 十进制整数 #####
+
+将规范替换为带符号整数的十进制表示形式。该对象还可以是格式化为整数的浮点数，省略任何分数。
+
+``` Elisp
+(format "There are %s chars" 16)  ; "There are 16 chars"
+```
+
+##### `%x` 和 `%X` #####
+
+将该规范替换为整数的十六进制表示形式。负整数的格式依赖于平台。`%x` 使用小写，`%x` 使用大写。该对象还可以是格式化为整数的浮点数，省略任何分数。
+
+``` Elisp
+(format "%d is #o%o and #x%x #X%X" 15 15 15 15)
+;  "15 is #o17 and #xf #XF"
+```
+
+##### `%c` 字符 #####
+
+用给定值的字符替换规范。
+
+``` Elisp
+(format "%c" ?\C-M)
+;  ""
+```
+
+##### `%e` 指数表示法 #####
+
+将规范替换为浮点数的指数表示法。
+
+``` Elisp
+(format "%e" 1500.78)
+;  "1.500780e+03"
+```
+
+##### `%f` 浮点数 #####
+
+将规范替换为浮点数的小数点表示法。
+
+``` Elisp
+(format "%f" pi)
+;  "3.141593"
+(format "%f" float-pi)
+;  "3.141593"
+(format "%f" float-e)
+;  "2.718282"
+```
+
+##### `%g` 浮点数 #####
+
+将规范替换为浮点数的表示法，使用指数表示法或小数点表示法。如果指数小于 `-4` 或大于或等于精度(默认值:6)，则使用指数表示法。默认情况下，从结果的小数部分删除尾随零，并且只有在后跟数字时才会出现小数点字符。
+
+``` Elisp
+(format "%g" float-pi)
+;  "3.14159"
+(format "%g" float-e)
+;  "2.71828"
+(format "%g" 975.0001)
+;  "975"
+(format "%g" 975.001)
+;  "975.001"
+```
+
+##### `%%` 百分号 #####
+
+用单个 `%` 替换该规格。这个格式规范是不寻常的，因为它的唯一形式是普通的 `%%`，而且它不使用值。例如，`(format "%% %d" 30)`返回 "% 30"。
+
+##### 例子 #####
+
+任何其他格式字符将导致“无效格式操作 invalid format operation”错误。
+
+下面是几个示例，它们采用了典型的 文本引用样式 *text-quoting-style* 设置:
+
+``` Elisp
+(format "The octal value of %d is %o,
+         and the hex value is %x." 18 18 18)
+     ⇒ "The octal value of 18 is 22,
+         and the hex value is 12."
+
+(format-message
+ "The name of this buffer is ‘%s’." (buffer-name))
+     ⇒ "The name of this buffer is ‘strings.texi’."
+
+(format-message
+ "The buffer object prints as `%s'." (current-buffer))
+     ⇒ "The buffer object prints as ‘strings.texi’."
+```
+
+默认情况下，格式规范对应于对象的连续值。因此，字符串中的第一个格式规范使用第一个这样的值，第二个格式规范使用第二个这样的值，依此类推。任何额外的格式规范(没有对应值的格式规范)都会导致错误。任何要格式化的额外值都将被忽略。
+
+``` Elisp
+(format "%d" 15 15 15)
+;  "15"
+```
+
+##### field number #####
+
+格式规范可以有一个字段号 *field number*，它是紧接在初始 `%` 之后的十进制数，后面跟着一个文字美元符号 `$`。它导致格式规范将参数转换为给定的数字，而不是下一个参数。**字段编号从1开始**。格式可以包含编号或未编号的格式规范，但不能同时包含这两种格式规范，除了 `%%` 可以与编号规范混合。
+
+例如, `%2$d` 表示第二个参数以整数格式化
+
+``` Elisp
+(format "%2$s, %3$s, %%, %1$s" "x" "y" "z")
+     ⇒ "y, z, %, x"
+(format "2: %2$d, 4: %4$d, 1: %1$d, 3: %3$d." 1 2 3 4)
+;  "2: 2, 4: 4, 1: 1, 3: 3."
+```
+
+##### flag 字符 #####
+
+在 `%` 和任何字段号之后，您可以放置某些标志字符。
+
+标志 `+` 在非负数之前插入一个加号，因此它总是有一个符号。
+
+作为标志的 `空格` 字符在非负数之前插入一个空格。(否则，非负数从第一个数字开始。)
+
+这些标志对于确保非负数和负数使用相同数量的列非常有用。除了 `%d` ， `%e`， `%f` ， `%g` 之外，它们将被忽略，如果同时使用两个标志，`+` 优先。
+
+``` Elisp
+(format "%2$+d" 2 3)
+;  "+3"
+(format "%1$ d" 5)
+;  " 5"
+(format "%1$+ d" 2)
+;  "+2"
+```
+
+标志 `#` 指定了另一种形式，这取决于所使用的格式。对于 `%o`，它确保结果以 `0` 开头。对于 `%x` 和 `%x`，它在非零结果前加上' 0x '或' 0x '。对于 `%e` 和 `%f`， `#` 标志表示包含小数点，即使精度为零。对于 `%g`，它总是包含一个小数点，并且还强制将小数点后的任何尾随零留在原本会被删除的位置。
+
+``` Elisp
+(format "%1$#+o" 1)
+;  "+01"
+(format "%1$#+x" 15)
+;  "+0xf"
+```
+
+标志 `0` 确保填充由 `0` 字符而不是空格组成。对于 `%s`、`%S` 和 `%c` 等非数字规范字符，此标志将被忽略。这些规范字符接受 `0` 标志，但仍然用空格填充。
+
+``` Elisp
+(format "%05d" 5)
+;  "00005"
+```
+
+标记 `-` 将导致按宽度插入的任何填充(如果指定)插入到右侧而不是左侧。如果同时存在 `-` 和 `0`，则忽略 `0` 标志。
+
+``` Elisp
+(format "%06d is padded on the left with zeros" 123)
+     ⇒ "000123 is padded on the left with zeros"
+
+(format "'%-6d' is padded on the right" 123)
+     ⇒ "'123   ' is padded on the right"
+
+(format "The word '%-7s' actually has %d letters in it."
+        "foo" (length "foo"))
+     ⇒ "The word 'foo    ' actually has 3 letters in it."
+```
+
+规范可以有一个 宽度 *width*，它是一个十进制数字，出现在任何字段号和标志之后。如果对象的打印表示包含的字符少于此宽度，则format将使用填充对其进行扩展。任何由宽度引入的填充通常由左侧插入的空格组成:
+
+``` Elisp
+(format "%5d is padded on the left with spaces" 123)
+     ⇒ "  123 is padded on the left with spaces"
+```
+
+如果宽度太小，则格式不会截断对象的打印表示形式。因此，可以使用宽度来指定列之间的最小间距，而不会有丢失信息的风险。在以下两个示例中， `%7s`' 指定最小宽度为7。在第一种情况下，插入 `%7s` 的字符串只有3个字母，并且需要4个空格作为填充。在第二种情况下，字符串"specification"有13个字母宽，但没有被截断。
+
+``` Elisp
+(format "The word '%7s' has %d letters in it."
+        "foo" (length "foo"))
+     ⇒ "The word '    foo' has 3 letters in it."
+(format "The word '%7s' has %d letters in it."
+        "specification" (length "specification"))
+     ⇒ "The word 'specification' has 13 letters in it."
+```
+
+所有规范字符都允许在字段号、标志和宽度(如果存在)之后选择精度。精度是一个小数点后面跟着一个数字字符串。对于浮点数规范(`%e` 和 `%f`)，精度指定要显示小数点后的位数;如果为零，小数点本身也被省略。对于 `%g`，精度指定要显示多少位有效数字(有效数字是小数点前的第一位数字及其后的所有数字)。如果 `%g` 的精度为零或未指定，则将其视为1。对于 `%s` 和 `%s`，精度将字符串截断为给定的宽度，因此 `%.3s` 只显示对象表示的前三个字符。对于其他规范字符，精度的影响是由`printf`族的本地库函数产生的。
+
+``` Elisp
+(format "%.4f" float-pi)
+;  "3.1416"
+(format "%.5g" 9.0001)
+;  "9.0001"
+```
+
+如果您计划稍后在格式化字符串上使用 `read` 来检索格式化值的副本，请使用允许read重构该值的规范。要以这种可逆的方式格式化数字，你可以使用 `%s` 和 `%s`，要格式化整数，你也可以使用 `%d`，要格式化非负整数，你也可以使用 `#x%x` 和 `#o%o`。其他格式可能有问题;例如，`%d` 和 `%g` 可能错误地处理nan，并可能丢失精度和类型， `#x%x` 和 `#o%o` 可能错误地处理负整数。参见输入函数 Input Functions。
+
+本节中描述的函数接受一组固定的规范字符。下一节描述一个函数格式规范，它可以接受自定义规范字符，如 `%a` 或 `%z`。
+
 ### 4.8 Custom Format Strings ###
+
+有时，允许用户和Lisp程序通过自定义格式控制字符串来控制如何生成某些文本是很有用的。例如，格式字符串可以控制如何显示某人的名字、姓氏和电子邮件地址。使用前一节中描述的函数格式，格式字符串可以是类似“%s %s <%s>”的格式。然而，这种方法很快就变得不切实际，因为不清楚哪个规范字符对应于哪个信息。
+
+对于这种情况，更方便的格式字符串应该是类似 `%f %l <%e>` 这样的字符串，其中每个规范字符携带更多的语义信息，并且可以很容易地相对于其他规范字符进行重新排列，从而使用户更容易定制此类格式字符串。
+
+本节中描述的函数 `format-spec` 执行与format类似的功能，只是它对使用任意规范字符的格式控制字符串进行操作。
+
+#### 函数: `format-spec template spec-alist &optional ignore-missing split` ####
+
+此函数返回一个字符串，该字符串根据 `spec-alist` 中指定的转换从格式字符串 模板 template 生成，该字符串是一个alist(参见关联列表)，格式为 `(letter . replacement)`。在格式化结果字符串时，模板中的每个规格 `%` 字母将被替换。
+
+除了格式规范之外，模板中的字符会直接复制到输出中，包括它们的文本属性(如果有的话)。格式规范的任何文本属性都被复制到它们的替换项中。
+
+使用 alist 来指定转换会产生一些有用的属性:
+
+* 如果 `spec-alist` 包含的 唯一字母键 unique letter keys 多于模板中的唯一规范字符，则忽略未使用的键。
+* 如果`spec-alist` 包含多个与相同字母的关联，则使用最接近列表开头的关联。
+* 如果模板不止一次包含相同的规范字符，那么在 `spec-alist`中找到的相同替换将被用作所有该字符替换的基础。
+* 模板中规范的顺序不必与 `spec-alist` 中的关联顺序相对应。
+
+`REPLACEMENT` 也可以是一个不接受参数的函数，并返回一个用于替换的字符串。它只会在模板中使用相应的 `LETTER` 时被调用。这很有用，例如，避免提示输入，除非需要输入。
+
+可选参数 `ignore-missing` 指示如何处理 `spec-alist` 中找不到的模板中的规范字符。如果为nil或省略，则该函数发出错误信号;如果它被忽略，这些格式规范将被保留在输出中，包括它们的文本属性(如果有的话);如果是delete，这些格式规范将从输出中删除;任何其他非nil值都被处理为忽略，但任何出现的 `%%` 也会在输出中原样保留。
+
+如果可选参数 `split` 为非nil，则 `format-spec` 将根据执行替换的位置将结果拆分为字符串列表，而不是返回单个字符串。例如:
+
+``` Elisp
+(format-spec "foo %b bar" '((?b . "zot")) nil t)
+     ⇒ ("foo " "zot" " bar")
+```
+
+`format-spec` 所接受的格式规范的语法与 `format` 所接受的语法相似，但不完全相同。在这两种情况下，格式规范都是以 `%` 开头，以 `s` 等字母结尾的字符序列。
+
+`format` 将特定的含义分配给一组固定的规范字符，而`format-spec`与`format`不同，它接受任意的规范字符，并平等地对待它们。例如:
+
+``` Elisp
+(setq my-site-info
+      (list (cons ?s system-name)
+            (cons ?t (symbol-name system-type))
+            (cons ?c system-configuration)
+            (cons ?v emacs-version)
+            (cons ?e invocation-name)
+            (cons ?p (number-to-string (emacs-pid)))
+            (cons ?a user-mail-address)
+            (cons ?n user-full-name)))
+
+(format-spec "%e %v (%c)" my-site-info)
+     ⇒ "emacs 27.1 (x86_64-pc-linux-gnu)"
+
+(format-spec "%n <%a>" my-site-info)
+     ⇒ "Emacs Developers <emacs-devel@gnu.org>"
+```
+
+格式规范可以在 `%` 后面立即包含以下任意数量的标志字符，以修改替换的各个方面。
+
+* `0`: 此标志导致由宽度指定的任何填充由' 0 '字符而不是空格组成。
+* `-`: 此标志将导致由宽度指定的任何填充被插入到右侧而不是左侧。
+* `<`: 如果指定了宽度和精度，这个标志会导致替换在左边被截断。
+* `>`: 如果指定，此标志将导致替换在给定宽度的右侧被截断。
+* `^`: 此标志将替换的文本转换为大写(参见Lisp中的大小写转换)。
+* `_ (underscore)`: 此标志将替换的文本转换为小写(参见Lisp中的大小写转换)。
+
+使用矛盾的标志(例如，大写和小写)的结果是未定义的。
+
+与格式的情况一样，格式规范可以包括宽度(出现在任何标志之后的十进制数)和精度(小数点')。，后跟一个十进制数字，该数字出现在任何标志和宽度之后。
+
+如果替换包含的字符少于其指定的宽度，则在左侧填充:
+
+``` Elisp
+(format-spec "%8a is padded on the left with spaces"
+             '((?a . "alpha")))
+     ⇒ "   alpha is padded on the left with spaces"
+```
+
+如果替换包含的字符多于其指定的精度，则在右侧截断:
+
+``` Elisp
+(format-spec "%.2a is truncated on the right"
+             '((?a . "alpha")))
+     ⇒ "al is truncated on the right"
+```
+
+下面是一个更复杂的例子，它结合了前面提到的几个特性:
+
+``` Elisp
+(setq my-battery-info
+      (list (cons ?p "73")      ; Percentage
+            (cons ?L "Battery") ; Status
+            (cons ?t "2:23")    ; Remaining time
+            (cons ?c "24330")   ; Capacity
+            (cons ?r "10.6")))  ; Rate of discharge
+
+(format-spec "%>^-3L : %3p%% (%05t left)" my-battery-info)
+     ⇒ "BAT :  73% (02:23 left)"
+
+(format-spec "%>^-3L : %3p%% (%05t left)"
+             (cons (cons ?L "AC")
+                   my-battery-info))
+     ⇒ "AC  :  73% (02:23 left)"
+```
+
+正如本节中的示例所示，格式规范通常用于有选择地格式化各种不同的信息片段。这在提供用户可自定义格式字符串的程序中很有用，因为用户可以选择使用常规语法和以任何期望的顺序格式化程序提供的信息的子集。
+
+``` Elisp
+(setq my-datetime-info
+      (list (cons ?Y "2024")     ; year
+	        (cons ?M "4")        ; month
+			(cons ?D "4")        ; day
+			(cons ?h "10")       ; hour
+			(cons ?m "54")       ; minutes
+			(cons ?t "15")))     ; seconds
+
+(format-spec "% 4Y年-%02M月-%02D日-%02h时-%02m分-%02t秒" my-datetime-info)
+;  "2024年-04月-04日-10时-54分-15秒"
+```
 
 ### 4.9 Case Conversion in Lisp ###
 
+字符大小写函数改变单个字符或字符串内容的大小写。这些函数通常只转换字母字符(字母 A 到 Z 和 a 到 z ，以及非ascii字母);其他字符不改变。您可以通过指定一个case表来指定一个不同的case转换映射(参见case table)。
+
+这些函数不修改作为参数传递给它们的字符串。
+
+下面的示例使用字符 X 和 x，它们分别具有ASCII码88和120。
+
+#### 函数: `downcase string-or-char` ####
+
+这个函数将 `string-or-char`(应该是字符或字符串)转换为小写。
+
+当`string-or-char`为字符串时，此函数返回一个新字符串，其中参数中的每个大写字母都将转换为小写字母。当`string-or-char`为字符时，此函数返回对应的小写字符(整数);如果原始字符是小写，或者不是字母，则返回值等于原始字符。
+
+``` Elisp
+(downcase "The cat in the hat")
+     ⇒ "the cat in the hat"
+
+(downcase ?X)
+     ⇒ 120
+```
+
+#### 函数: `upcase string-or-char` ####
+
+这个函数将 `string-or-char`(应该是字符或字符串)转换为大写。
+
+当`string-or-char`为字符串时，此函数返回一个新字符串，其中参数中的每个小写字母都将转换为大写字母。当`string-or-char`为字符时，此函数返回相应的大写字符(整数);如果原字符是大写，或者不是字母，则返回值等于原字符。
+
+``` Elisp
+(upcase "The cat in the hat")
+     ⇒ "THE CAT IN THE HAT"
+
+(upcase ?x)
+     ⇒ 88
+```
+
+#### 函数: `capitalize string-or-char` ####
+
+这个函数将字符串或字符大写。如果`string-or-char`是字符串，则该函数返回一个新字符串，其内容是`string-or-char`的副本，其中每个单词都大写。这意味着每个单词的第一个字符转换为大写，其余字符转换为小写。
+
+单词的定义是在当前语法表中分配给单词组成语法类的任何连续字符序列(参见语法类表)。
+
+当`string-or-char`是字符时，此函数的作用与upcase相同。
+
+``` Elisp
+(capitalize "The cat in the hat")
+     ⇒ "The Cat In The Hat"
+
+(capitalize "THE 77TH-HATTED CAT")
+     ⇒ "The 77th-Hatted Cat"
+
+(capitalize ?x)
+     ⇒ 88
+```
+
+#### 函数: `upcase-initials string-or-char` ####
+
+如果`string-or-char`是一个字符串，该函数将`string-or-char`中单词的首字母大写，而不改变首字母以外的任何字母。它返回一个新字符串，其内容是string-or-char的副本，其中每个单词的首字母都已转换为大写。
+
+单词的定义是在当前语法表中分配给单词组成语法类的任何连续字符序列(参见语法类表)。
+
+当大写字母的参数是一个字符时，大写字母的结果与大写字母的结果相同。
+
+``` Elisp
+(upcase-initials "The CAT in the hAt")
+     ⇒ "The CAT In The HAt"
+```
+
+请注意，大小写转换不是代码点的一对一映射，结果的长度可能与参数的长度不同。此外，由于传递字符强制返回类型为字符，函数无法执行适当的替换，与处理单字符字符串相比，结果可能不同。例如:
+
+``` Elisp
+(upcase "ﬁ")  ; note: single character, ligature "fi"
+     ⇒ "FI"
+
+(upcase ?ﬁ)
+     ⇒ 64257  ; i.e. ?ﬁ
+
+(upcase "我喜欢Emacs")
+;  "我喜欢EMACS"
+```
+
+为了避免这种情况，必须首先使用字符串函数将字符转换为字符串，然后再将其传递给其中一个大小写函数。当然，不能对结果的长度作任何假设。
+
+这些特殊情况的映射来自特殊大写，特殊小写和特殊标题，参见字符属性。
+
+有关比较字符串的函数，请参阅字符和字符串的比较;其中一些忽略大小写差异，或者可以选择忽略大小写差异。
+
 ### 4.10 The Case Table ###
+
+您可以通过安装特殊的 *case table* 来自定义大小写转换。大小写表指定大写字母和小写字母之间的映射。它既影响Lisp对象的大小写转换函数(参见上一节)，也影响那些应用于缓冲区文本的函数(参见大小写更改)。每个缓冲区都有一个case表;还有一个标准的case表，用于初始化新缓冲区的case表。
+
+case table 是一个 `char-table`(参见Char-Tables)，它的子类型是 `case-table`。这个字符表将每个字符映射为相应的小写字符。它有三个额外的槽，用来存放相关的表:
+
+* `upcase`: 大写表将每个字符映射到相应的大写字符。
+规范化
+* `canonicalize`: 规范化表将一组与大小写相关的字符映射到该集合的特定成员。
+* `equivalences`: 等价表将一组与大小写相关的字符中的每一个映射到该集合中的下一个字符。
+
+在简单的情况下，你只需要指定到小写的映射;三个相关的表将从那个表自动计算出来。
+
+对于某些语言，大写字母和小写字母不是一一对应的。可能有两个不同的小写字母，但大写字母相同。在这些情况下，您需要同时指定小写和大写的映射。
+
+额外的表规范化将每个字符映射到规范等效;任何两个通过大小写转换相关联的字符都具有相同的规范等效字符。例如，由于 A 和 a 是通过大小写转换相关联的，因此它们应该具有相同的规范等效字符(对于它们两个来说应该是 a ，或者对于它们两个来说都应该是 A )。
+
+
+额外的表 *equivalences* 是一个映射，它循环地排列每个等价类(具有相同规范等价的字符)。(对于普通ASCII，这将把 a 映射为 A ， A 映射为 a，对于每组等效字符也是如此。)
+
+在构造case表时，可以为规范化提供nil;然后Emacs从小写和大写映射中填充这个槽。你也可以为等价提供nil;然后Emacs从规范化中填补这个空缺。在实际使用的case表中，这些组件是非空的。不要在没有同时指定规范化的情况下尝试指定等价。
+
+以下是使用大小写表的函数:
+
+#### 函数: `case-table-p object` ####
+
+如果对象是有效的case表，则此谓词返回非nil。
+
+#### 函数: `set-standard-case-table table` ####
+
+这个函数使table成为标准的case表，以便在随后创建的任何缓冲区中使用它。
+
+#### 函数: `standard-case-table` ####
+
+这将返回标准 case table。
+
+#### 函数: `current-case-table` ####
+
+这个函数返回当前缓冲区的case表。
+
+#### 函数: `set-case-table table` ####
+
+这将当前缓冲区的大小写表设置为表。
+
+#### 函数: `with-case-table table body` ####
+
+`with-case-table` 宏保存当前case table，使table成为当前的case table，计算body forms，最后恢复case table。返回值是body中最后一个表单的值。即使在通过抛出或错误异常退出的情况下，case表也会恢复(请参阅非本地退出 Nonlocal Exits)。
+
+一些语言环境修改了ASCII字符的大小写转换;例如，在土耳其语环境中，ASCII大写I被小写为土耳其式无点I ('ı')。这可能会干扰需要普通ASCII大小写转换的代码，例如基于ASCII的网络协议的实现。在这种情况下，使用with-case-table宏和变量ASCII -case-table，该变量存储ASCII字符集未修改的case表。
+
+#### 函数: `ascii-case-table` ####
+
+ASCII字符集的大小写表。任何语言环境设置都不应修改此设置。
+
+以下三个函数是用于定义非ascii字符集的包的方便子例程。它们修改指定的case表case-table;它们还修改标准语法表 Syntax Tables。参见语法表。通常，您将使用这些函数来更改标准case table。
+
+#### 函数: `set-case-syntax-pair uc lc case-table` ####
+
+该函数指定一对对应的字母，一个大写，一个小写。
+
+#### 函数: `set-case-syntax-delims l r case-table` ####
+
+这个函数使字符l和r成为一对匹配的大小写不变分隔符。
+
+#### 函数: `set-case-syntax char syntax case-table` ####
+
+这个函数使char保持大小写不变，使用syntax语法。
+
+#### 命令: `describe-buffer-case-table` ####
+
+该命令显示当前缓冲区的case表内容的描述。
+
+## 5 Lists ##
+
 
 
 ---
+
+
+#### 函数: `` ####
 
 
 #### 函数: `` ####
