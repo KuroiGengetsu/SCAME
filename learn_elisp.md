@@ -3742,6 +3742,8 @@ ddd"
 
 ``` Elisp
 (format "There are %s chars" 16)  ; "There are 16 chars"
+(let ((a 3) (b 4))
+    (format "a=%d, b=%d" a b))
 ```
 
 ##### `%x` 和 `%X` #####
@@ -4202,12 +4204,1378 @@ ASCII字符集的大小写表。任何语言环境设置都不应修改此设置
 
 ## 5 Lists ##
 
+列表表示由零个或多个元素组成的序列(可以是任何Lisp对象)。列表和向量的重要区别在于，两个或多个列表可以共享其部分结构;此外，您可以在列表中插入或删除元素，而无需复制整个列表。
 
+
+* Lists and Cons Cells
+* Predicates on Lists
+* Accessing Elements of Lists
+* Building Cons Cells and Lists
+* Modifying List Variables
+* Modifying Existing List Structure
+* Using Lists as Sets
+* Association Lists
+* Property Lists
+
+#### 5.1 Lists and Cons Cells ####
+
+Lisp中的列表不是原始数据类型(primitive data type);它们由 `cons cells` 构建(参见cons单元格和列表类型)。cons单元格是表示有序对的数据对象。也就是说，它有两个槽，每个槽存放或引用某个Lisp对象。一个插槽称为CAR，另一个称为CDR。(这些名字是传统的;请参阅Cons单元格和列表类型。)CDR读作“could-er”。
+
+我们说“这个 cons cell 的CAR是”它的CAR槽当前持有的任何对象，CDR也是如此。
+
+列表是一系列链接在一起的 cell，因此每个cell都引用下一个单元格。列表中的每个元素都有一个cons cell。按照惯例，cons单元格的CAR保存列表的元素，CDR用于链接列表(CAR和CDR之间的这种不对称完全是惯例问题;在cons单元级别，CAR和CDR槽具有相似的属性)。因此，列表中每个cons cell对应的话单槽位对应下面的cons cell。
+
+此外，按照惯例，列表中最后一个cons单元格的CDR为nil。我们称这种以零结尾的结构为适当的列表4。在Emacs Lisp中，符号nil既是一个符号，也是一个没有元素的列表。为方便起见，将符号nil视为其CDR(以及CAR)为nil。
+
+因此，正确列表的CDR始终是正确列表。非空适当列表的CDR是包含除第一个元素以外的所有元素的适当列表。
+
+如果列表的最后一个cons单元格的CDR不是nil，我们称该结构为 点列表(dotted list)，因为它的打印表示将使用点对表示法(参见点对表示法)。还有另一种可能性:某些cons单元的CDR可能指向列表中以前的一个cons单元。我们称这种结构为循环表 circular list。
+
+对于某些目的，列表是正确的、圆形的还是虚线的并不重要。如果程序没有在列表中查找到最后一个cons单元格的CDR，它也不会在意。然而，一些对列表进行操作的函数需要正确的列表，如果给出点列表则会发出错误信号。如果给定一个循环列表，大多数试图找到列表末端的函数都会进入无限循环。您可以使用函数 `proper-list-p`(在下一节中描述)来确定一个列表是否是合适的列表。
+
+因为大多数cons单元格被用作列表的一部分，所以我们将任何由cons单元格组成的结构称为列表结构。
+
+#### 5.2 Predicates on Lists ####
+
+下面的谓词测试一个Lisp对象是 atom，是cons cell还是list，还是区别对象nil。(这些谓语中的许多都可以根据其他谓语来定义，但它们的使用非常频繁，因此值得拥有它们。)
+
+#### 函数: `consp object` ####
+
+如果对象是cons单元格，此函数返回t，否则返回nil。Nil不是cons单元格，尽管它是一个列表。
+
+``` Elisp
+(consp nil)
+;  t
+```
+
+#### 函数: `atom object` ####
+
+如果对象是原子，则返回t，否则返回nil。除了细胞外，所有的物体都是原子。符号nil是一个原子，也是一个列表;它是唯一兼具两者的Lisp对象。
+
+``` Elisp
+(atom nil)
+;  t
+;  (atom object) ≡ (not (consp object))
+```
+
+#### 函数: `listp object` ####
+
+如果对象是cons单元格或nil，则此函数返回t。否则，它返回nil。
+
+``` Elisp
+(listp '(1))
+;  t
+(listp '())
+```
+
+#### 函数: `nlistp object` ####
+
+此函数与listp相反:如果object不是列表，则返回t。否则，它返回nil。
+
+`(listp object) ≡ (not (nlistp object))`
+
+#### 函数: `null object` ####
+
+如果object为nil，此函数返回t，否则返回nil。这个函数与not相同，但是为了清楚起见，我们在对象被认为是列表时使用null，而不是在对象被认为是真值时使用null(请参阅组合条件的构造)。
+
+``` Elisp
+(null '(1))
+;  nil
+(null nil)
+;  t
+(null '())
+;  t
+```
+
+#### 函数: `proper-list-p object` ####
+
+如果对象是一个正确的列表，这个函数返回对象的长度，否则返回nil(参见列表和Cons单元格)。除了 listp 外，一个正确的列表既不是循环列表，也不是点列表。
+
+``` Elisp
+(proper-list-p '(a b c))
+    ⇒ 3
+
+(proper-list-p '(a b . c))
+    ⇒ nil
+
+```
+
+#### 5.3 Accessing Elements of Lists ####
+
+#### 函数: `car cons-cell` ####
+
+这个函数返回 `cons-cell` 的第一个槽所引用的值。换句话说，它返回con -cell的CAR。
+
+作为特殊情况，如果cons-cell为nil，则此函数返回nil。因此，任何列表都是有效参数。如果参数不是cons cell或nil，则会发出错误信号。
+
+``` Elisp
+(car '(a b c))
+     ⇒ a
+
+(car '())
+     ⇒ nil
+```
+
+#### 函数: `cdr cons-cell` ####
+
+这个函数返回 `cons-cell` 的第二个槽所引用的值。换句话说，它返回cons-cell的CDR。
+
+作为一种特殊情况，如果cons-cell为nil，则此函数返回nil;因此，任何列表都是有效参数。如果参数不是cons单元格或nil，则会发出错误信号。
+
+``` Elisp
+(cdr '(a b c))
+     ⇒ (b c)
+
+(cdr '())
+     ⇒ nil
+```
+
+#### 函数: `car-safe object` ####
+
+该函数允许您获取cons单元格的CAR，同时避免其他数据类型的错误。如果object是cons cell，则返回object的CAR，否则返回nil。这与car相反，如果object不是列表，则会发出错误信号。
+
+``` Elisp
+(car-safe object)
+≡
+(let ((x object))
+  (if (consp x)
+      (car x)
+    nil))
+```
+
+#### 函数: `cdr-safe object` ####
+
+该函数使您可以获取cons单元格的CDR，同时避免其他数据类型的错误。如果object是cons cell，则返回object的CDR，否则返回nil。这与cdr相反，如果object不是列表，cdr会发出错误信号。
+
+``` Elisp
+(cdr-safe object)
+≡
+(let ((x object))
+  (if (consp x)
+      (cdr x)
+    nil))
+```
+
+#### 宏: `pop listname` ####
+
+这个宏提供了一种方便的方法来检查列表的CAR，并立即将其从列表中删除。它对存储在 `listname` 中的列表进行操作。它从列表中删除第一个元素，将CDR保存到listname中，然后返回被删除的元素。
+
+在最简单的情况下，listname是一个未加引号的符号，用来命名一个列表;在这种情况下，这个宏等价于
+
+``` Elisp
+(prog1 (car listname) (setq listname (cdr listname))).
+```
+
+``` Elisp
+(setq x '(a b c))
+
+(pop x)
+;   a
+
+x
+;  (b c)
+```
+
+更一般地说，listname可以是一个一般化变量。在这种情况下，这个宏使用 `setf` 保存到listname中。参见广义变量 Generalized Variables。
+
+关于push宏，它将元素添加到列表中，请参见修改列表变量。
+
+#### 函数: `nth n list` ####
+
+这个函数返回list的第n个元素。元素从0开始编号，因此list的CAR是元素编号为0。如果list的长度小于等于n，则该值为nil。
+
+``` Elisp
+(nth 2 '(1 2 3 4))
+     ⇒ 3
+
+(nth 10 '(1 2 3 4))
+     ⇒ nil
+
+(nth n x) ≡ (car (nthcdr n x))
+```
+
+函数elt是类似的，但适用于任何类型的序列。由于历史原因，它以相反的顺序进行论证。看到序列。
+
+#### 函数: `nthcdr n list` ####
+
+这个函数返回列表的第n个CDR。换句话说，它跳过列表的前n个链接，返回后面的链接。
+
+如果n为0，则nthcdr返回list的所有内容。如果列表的长度小于等于n，则nthcdr返回nil。
+
+``` Elisp
+(nthcdr 1 '(1 2 3 4))
+     ⇒ (2 3 4)
+
+(nthcdr 10 '(1 2 3 4))
+     ⇒ nil
+
+(nthcdr 0 '(1 2 3 4))
+     ⇒ (1 2 3 4)
+```
+
+#### 函数: `take n list` ####
+
+这个函数返回列表的前n个元素。本质上，它返回列表中nthcdr跳过的部分。
+
+如果小于n个元素，则返回list;如果n为零或负值，它返回nil。
+
+``` Elisp
+(take 3 '(a b c d))
+     ⇒ (a b c)
+
+(take 10 '(a b c d))
+     ⇒ (a b c d)
+
+(take 0 '(a b c d))
+     ⇒ nil
+```
+
+#### 函数: `ntake n list` ####
+
+这是通过破坏性地修改实参的链表结构来工作的take函数的一个版本。这使得它更快，但是list的原始值可能会丢失。
+
+如果小于n个元素，则返回未修改的列表;如果n为零或负值，它返回nil。否则，它返回被截断到前n个元素的列表。
+
+这意味着使用返回值而不是仅仅依赖截断效应通常是一个好主意，除非已知n为正数。
+
+#### 函数: `last list &optional n` ####
+
+这个函数返回列表的最后一个链接。这个链接的car是列表的最后一个元素。如果list为空，则返回nil。如果n为非nil，则返回倒数第n个链接，如果n大于list的长度则返回整个列表。
+
+``` Elisp
+(last '(3 2 1))
+;  (1)
+(last '(3 2 1) 2)
+;  (2 1)
+```
+
+#### 函数: `safe-length list` ####
+
+这个函数返回list的长度，没有错误或无限循环的风险。它通常返回列表中不同的cons单元格的数量。然而，对于循环列表，该值只是一个上界;它往往太大了。
+
+如果list不是nil或cons单元格，则安全长度返回0。
+
+当你不担心列表可能是循环的时候，最常用的计算列表长度的方法是使用length。看到序列。
+
+#### 函数: `caar cons-cell` ####
+
+等同于 `(car (car cons-cell))`
+
+``` Elisp
+(caar '((1 2 3) 4 5))
+;  1
+```
+
+#### 函数: `cadr cons-cell` ####
+
+同 `(car (cdr cons-cell)) ` 或 ` (nth 1 cons-cell)`
+
+#### 函数: `cdar cons-cell` ####
+
+同 `(cdr (car cons-cell))`
+
+#### 函数: `cddr cons-cell` ####
+
+同 `(cdr (cdr cons-cell))` 或 `(nthcdr 2 cons-cell)`
+
+除此之外，car和cdr的另外24个组合被定义为cxxxr和cxxxr，其中每个x都是a或d。cadr、caddr和caddr分别选择列表的第二、第三或第四个元素。Cl-lib以cl-second、cl-third和cl-fourth的名称提供相同的功能。参见公共Lisp扩展中的列表函数。
+
+#### 函数: `butlast x &optional n` ####
+
+这个函数返回删除最后一个元素或最后n个元素的列表x。如果n大于零，它会复制列表，以免损坏原始列表。通常，`(append (butlast x n) (last x n))` 将返回一个等于x的列表。
+
+#### 函数: `nbutlast x &optional n` ####
+
+这是butlast的一个版本，它通过破坏性地修改适当元素的cdr而不是创建列表的副本来工作。
+
+#### 5.4 Building Cons Cells and Lists ####
+
+许多函数构建列表，因为列表是Lisp的核心。Cons是基本的列表构建功能;然而，有趣的是，在Emacs的源代码中，list比cons使用的次数更多。
+
+#### 函数: `cons object1 object2` ####
+
+这个函数是构建新的列表结构的最基本的函数。它创建一个新的cons cell，使object1为CAR, object2为CDR。然后返回新的cons单元格。参数object1和object2可以是任何Lisp对象，但object2通常是一个列表。
+
+``` Elisp
+(cons 1 '(2))
+     ⇒ (1 2)
+
+(cons 1 '())
+     ⇒ (1)
+
+(cons 1 2)
+     ⇒ (1 . 2)
+```
+
+cons通常用于将单个元素添加到列表的前面。这称为将 元素转换到列表中 *consing the element onto the list*。例如:
+
+``` Elisp
+(setq list (cons newelt list))
+```
+
+请注意，本例中使用的名为list的变量和下面描述的名为list的函数之间没有冲突;任何符号都可以同时满足这两种目的。
+
+#### 函数: `list &rest objects` ####
+
+这个函数创建一个以对象作为元素的列表。生成的列表总是以nil结尾。如果没有给出对象，则返回空列表。
+
+``` Elisp
+(list 1 2 3 4 5)
+;  (1 2 3 4 5)
+(list 1 2 '(3 4 5) 'foo)
+;  (1 2 (3 4 5) foo)
+(list)
+;  nil
+```
+
+#### 函数: `make-list length object` ####
+
+这个函数创建一个长度元素列表，其中每个元素都是object。比较make-list和make-string(参见创建字符串)。
+
+``` Elisp
+(make-list 3 'pigs)
+     ⇒ (pigs pigs pigs)
+
+(make-list 0 'pigs)
+     ⇒ nil
+
+(setq l (make-list 3 '(a b)))
+     ⇒ ((a b) (a b) (a b))
+(eq (car l) (cadr l))
+     ⇒ t
+```
+
+#### 函数: `append &rest sequences` ####
+
+这个函数返回一个包含序列所有元素的列表。序列可以是列表、向量、布尔向量或字符串，但最后一个通常应该是列表。除了最后一个参数外，所有参数都被复制，因此没有任何参数被改变。(请参阅重新排列列表的函数中的 `nconc`，了解不复制连接列表的方法。)
+
+更一般地说，要追加的最后一个参数可以是任何Lisp对象。最后参数不会被复制或转换;它成为新列表中最后一个cons单元格的CDR。如果最后一个参数本身是一个列表，那么它的元素实际上成为结果列表的元素。如果最后一个元素不是列表，则结果是一个带点的列表，因为它的最终CDR不是nil，nil在正确的列表中是必需的(参见列表和Cons单元格)。
+
+``` Elisp
+(setq trees '(pine oak))
+     ⇒ (pine oak)
+(setq more-trees (append '(maple birch) trees))
+     ⇒ (maple birch pine oak)
+
+
+trees
+     ⇒ (pine oak)
+more-trees
+     ⇒ (maple birch pine oak)
+
+(eq trees (cdr (cdr more-trees)))
+     ⇒ t
+```
+
+通过查看框图，您可以了解append是如何工作的。变量trees被设置为列表 `(pine oak)`，然后变量more-trees被设置为列表 `(maple birch pine oak)`。然而，变量 trees 继续引用原始列表:
+
+``` PlainText
+more-trees                trees
+|                           |
+|     --- ---      --- ---   -> --- ---      --- ---
+ --> |   |   |--> |   |   |--> |   |   |--> |   |   |--> nil
+      --- ---      --- ---      --- ---      --- ---
+       |            |            |            |
+       |            |            |            |
+        --> maple    -->birch     --> pine     --> oak
+```
+
+空序列对append返回的值没有任何贡献。因此，最后的nil实参强制使用前一个实参的副本:
+
+``` Elisp
+trees
+     ⇒ (pine oak)
+
+(setq wood (append trees nil))
+     ⇒ (pine oak)
+
+wood
+     ⇒ (pine oak)
+
+(eq wood trees)
+     ⇒ nil
+```
+
+在 `copy-sequence` 函数发明之前，这曾经是复制列表的常用方法。参见序列、数组和向量。
+
+下面演示了如何使用vector和string作为 append 的参数:
+
+``` Elisp
+(apply 'append '((a b c) nil (x y z) nil))
+     ⇒ (a b c x y z)
+```
+
+如果没有给出序列，则返回nil:
+
+``` Elisp
+(append)
+;  nil
+```
+
+下面是一些最终参数不是列表的例子:
+
+``` Elisp
+(append '(x y) 'z)
+     ⇒ (x y . z)
+(append '(x y) [z])
+     ⇒ (x y . [z])
+```
+
+第二个例子表明，当最后一个参数是序列而不是列表时，序列的元素不会成为结果列表的元素。相反，序列成为最终的CDR，就像任何其他非列表最终参数一样。
+
+#### 函数: `copy-tree tree &optional vecp` ####
+
+这个函数返回 tree 的副本。如果tree是一个cons单元，则生成一个具有相同CAR和CDR的新cons单元，然后以相同的方式递归复制CAR和CDR。
+
+通常，当tree不是cons单元格时，copy-tree只返回tree。但是，如果vecp非nil，它也会复制vector(并递归地对其元素进行操作)。
+
+#### 函数: `flatten-tree tree` ####
+
+此函数返回tree的“扁平”副本，即包含所有非nil终端节点或叶子的列表，这些节点或叶子是根在tree上的cons单元的树。返回列表中的叶子与tree中的顺序相同。
+
+``` Elisp
+(flatten-tree '(1 (2 . 3) nil (4 5 (6)) 7))
+    ⇒(1 2 3 4 5 6 7)
+```
+
+#### 函数: `ensure-list object` ####
+
+这个函数返回一个列表形式的对象。如果object已经是一个列表，函数返回它;否则，函数返回一个包含object的单元素列表。
+
+如果你有一个变量可能是也可能不是一个列表，这通常是有用的，然后你可以说，例如:
+
+``` Elisp
+(dolist (elem (ensure-list foo))
+  (princ elem))
+```
+
+#### 函数: `number-sequence from &optional to separation` ####
+
+这个函数返回一个由数字组成的列表，该列表以from开始，按分隔递增，以to或to之前结束。分隔可以是正的，也可以是负的，默认为1。如果to为nil或在数字上等于from，则值为单元素列表(from)。如果to小于from且分隔为正，或大于from且分隔为负，则值为nil，因为这些参数指定了空序列。
+
+如果分隔为0，而to既不是nil，也不是数字上等于from，则number-sequence表示错误，因为这些参数指定了一个无限序列。
+
+所有参数都是数字。浮点参数可能比较棘手，因为浮点运算是不精确的。例如，根据机器的不同，(number-sequence 0.4 0.6 0.2)很可能返回一个元素列表(0.4)，而(number-sequence 0.4 0.8 0.2)返回一个包含三个元素的列表。列表的第n个元素由精确的公式(+ from (* n分隔))计算。因此，如果要确保to包含在列表中，则可以为to传递这种类型的表达式。或者，可以用稍微大一点的值替换to(或者如果分隔为负，则使用稍微负一点的值)。
+
+一些例子:
+
+``` Elisp
+(number-sequence 4 9)
+;  (4 5 6 7 8 9)
+(number-sequence 9 4 -1)
+;  (9 8 7 6 5 4)
+(number-sequence 9 4 -2)
+;  (9 7 5)
+(number-sequence 8)
+;  (8)
+(number-sequence 8 5)
+;  nil
+(number-sequence 5 8 -1)
+;  nil
+(number-sequence 1.5 6 2)
+;  (1.5 3.5 5.5)
+```
+
+没有严格等效的方法将元素添加到列表的末尾。您可以使用 `(append listname (list newelt))`，它通过复制listname并在其末尾添加newelt来创建一个全新的列表。或者您可以使用 `(nconc listname (list newelt))`，它通过跟踪所有cdr来修改listname，然后替换终止的nil。将此与使用cons将元素添加到列表的开头进行比较，后者既不复制也不修改列表。
+
+``` Elisp
+; 在结尾添加元素
+(setq list1 '(1 2 3))
+
+;  1. 不改变 list1
+(append list1 (list 1))
+;  2. 改变 list1
+(nconc list1 (list 2))
+```
+
+#### 5.5 Modifying List Variables ####
+
+这些函数和一个宏提供了方便的方法来修改存储在变量中的列表。
+
+#### 宏: `push element listname` ####
+
+这个宏创建一个新列表，其CAR是element, CDR是listname指定的列表，并将该列表保存在listname中。在最简单的情况下，listname是一个命名列表的未加引号的符号，这个宏等价于 `(setq listname (cons element listname))`。
+
+``` Elisp
+(setq l '(a b))
+     ⇒ (a b)
+(push 'c l)
+     ⇒ (c a b)
+l
+     ⇒ (c a b)
+```
+
+更一般地说，listname可以是一个一般化变量。在这种情况下，这个宏的作用相当于(setf listname (cons element listname))。参见广义变量。
+
+关于pop宏，它从列表中删除第一个元素，请参见访问列表的元素。
+
+有两个函数修改列表，它们是变量的值。
+
+#### 函数: `add-to-list symbol element &optional append compare-fn` ####
+
+如果element不是旧值的成员，则该函数通过将element转换为旧值来设置变量符号。它返回结果列表，无论是否更新。在调用之前，符号的值最好是一个列表。Add-to-list使用compare-fn将元素与现有列表成员进行比较;如果compare-fn为nil，则使用equal。
+
+通常，如果添加元素，则将其添加到符号的前面，但如果可选参数append非nil，则将其添加到末尾。
+
+参数符号没有隐式引号;Add-to-list是一个普通函数，与set类似，但与setq不同。如果你想的话，你可以自己引用这个论点。
+
+当symbol引用词法变量时，不要使用此函数。
+
+下面是一个演示如何使用add-to-list的场景:
+
+``` Elisp
+(setq foo '(a b))
+     ⇒ (a b)
+
+(add-to-list 'foo 'c)     ;; Add c.
+     ⇒ (c a b)
+
+(add-to-list 'foo 'b)     ;; No effect.
+     ⇒ (c a b)
+
+foo                       ;; foo was changed.
+     ⇒ (c a b)
+```
+
+`(add-to-list 'var value)`的等价表达式如下:
+
+``` Elisp
+(if (member value var)
+    var
+  (setq var (cons value var)))
+```
+
+#### 函数: `add-to-ordered-list symbol element &optional order` ####
+
+该函数通过在order指定的位置将元素插入旧值(必须是一个列表)来设置变量符号。如果元素已经是列表的成员，则根据顺序调整其在列表中的位置。使用eq测试成员关系。该函数返回结果列表，无论是否更新。
+
+顺序通常是一个数字(整数或浮点数)，列表中的元素按非递减的数字顺序排序。
+
+顺序也可以省略或为空。如果已经有一个元素，则该元素的数字顺序保持不变;否则，元素没有数字顺序。没有数字列表顺序的元素被放置在列表的末尾，没有特定的顺序。
+
+对于order的任何其他值，如果元素已经有一个数字顺序，则删除该元素的数字顺序;否则，它等于nil。
+
+参数符号没有隐式引号; `add-to-ordered-list` 是一个普通函数，与set类似，但与setq不同。如有必要，你自己引用论点。
+
+排序信息存储在符号的 `list-order` 属性的哈希表中。符号不能引用词法变量 lexical variable。
+
+下面是一个演示如何使用add-to-ordered-list的场景:
+
+``` Elisp
+(setq foo '())
+     ⇒ nil
+
+(add-to-ordered-list 'foo 'a 1)     ;; Add a.
+     ⇒ (a)
+
+(add-to-ordered-list 'foo 'c 3)     ;; Add c.
+     ⇒ (a c)
+
+(add-to-ordered-list 'foo 'b 2)     ;; Add b.
+     ⇒ (a b c)
+
+(add-to-ordered-list 'foo 'b 4)     ;; Move b.
+     ⇒ (a c b)
+
+(add-to-ordered-list 'foo 'd)       ;; Append d.
+     ⇒ (a c b d)
+
+(add-to-ordered-list 'foo 'e)       ;; Add e.
+     ⇒ (a c b e d)
+
+foo                       ;; foo was changed.
+     ⇒ (a c b e d)
+```
+
+#### 5.6 Modifying Existing List Structure ####
+
+可以使用原语 `setcar` 和 `setcdr` 修改cons单元格的CAR和CDR内容。这些都是破坏性操作，因为它们改变了现有的列表结构。破坏性操作应该只应用于可变列表，即通过cons、list或类似操作构造的列表。通过引用创建的列表是程序的一部分，不应该通过破坏性操作来更改。见可变性 Mutability。
+
+> Common Lisp注意: Common Lisp使用rplaca和rplacd函数来改变列表结构;它们改变结构的方式与setcar和setcdr相同，但是Common Lisp函数返回cons单元格，而setcar和setcdr返回新的CAR或CDR。
+
+
+* Altering List Elements with setcar
+* Altering the CDR of a List
+* Functions that Rearrange Lists
+
+
+### 5.6.1 Altering List Elements with setcar ###
+
+通过`setcar`来改变一个控制单元的CAR。在列表中使用setcar时，将列表中的一个元素替换为另一个元素。
+
+#### 函数: `setcar cons object` ####
+
+此函数将对象存储为cons的新CAR，以替换其先前的CAR。换句话说，它改变了控件的CAR槽以引用对象。它返回值对象。例如:
+
+``` Elisp
+(setq x (list 1 2))
+     ⇒ (1 2)
+(setcar x 4)
+     ⇒ 4
+x
+     ⇒ (4 2)
+```
+
+当cons cell是几个列表的共享结构的一部分时，将新的CAR存储到cons中会更改每个列表的一个元素。下面是一个例子:
+
+``` Elisp
+;; Create two lists that are partly shared.
+(setq x1 (list 'a 'b 'c))
+     ⇒ (a b c)
+(setq x2 (cons 'z (cdr x1)))
+     ⇒ (z b c)
+
+
+;; Replace the CAR of a shared link.
+(setcar (cdr x1) 'foo)
+     ⇒ foo
+x1                           ; Both lists are changed.
+     ⇒ (a foo c)
+x2
+     ⇒ (z foo c)
+
+
+;; Replace the CAR of a link that is not shared.
+(setcar x1 'baz)
+     ⇒ baz
+x1                           ; Only one list is changed.
+     ⇒ (baz foo c)
+x2
+     ⇒ (z foo c)
+
+```
+
+下面是变量x1和x2中两个列表共享结构的图形描述，说明了为什么替换b会同时改变它们:
+
+``` PlainText
+        --- ---        --- ---      --- ---
+x1---> |   |   |----> |   |   |--> |   |   |--> nil
+        --- ---        --- ---      --- ---
+         |        -->   |            |
+         |       |      |            |
+          --> a  |       --> b        --> c
+                 |
+       --- ---   |
+x2--> |   |   |--
+       --- ---
+        |
+        |
+         --> z
+```
+
+这是另一种形式的箱形图，显示了相同的关系:
+
+``` Plaintext
+x1:
+ --------------       --------------       --------------
+| car   | cdr  |     | car   | cdr  |     | car   | cdr  |
+|   a   |   o------->|   b   |   o------->|   c   |  nil |
+|       |      |  -->|       |      |     |       |      |
+ --------------  |    --------------       --------------
+                 |
+x2:              |
+ --------------  |
+| car   | cdr  | |
+|   z   |   o----
+|       |      |
+ --------------
+```
+
+### 5.6.2 Altering the CDR of a List ###
+
+修改CDR的最低级原语是setcdr:
+
+#### 函数: `setcdr cons object` ####
+
+该函数将对象存储为cons的新CDR，替换之前的CDR。换句话说，它将con的CDR槽更改为引用对象。它返回值对象。
+
+下面是一个用另一个列表替换列表的CDR的示例。列表中除第一个元素外的所有元素都被删除，取而代之的是一个不同的元素序列。第一个元素是不变的，因为它位于列表的CAR中，不能通过CDR到达。
+
+``` Elisp
+(setq x (list 1 2 3))
+     ⇒ (1 2 3)
+
+(setcdr x '(4))
+     ⇒ (4)
+
+x
+     ⇒ (1 4)
+```
+
+您可以通过更改列表中cons cell的CDR来删除列表中间的元素。例如，这里我们通过更改第一个cons cell的CDR，从列表 `(a b c)` 中删除第二个元素b:
+
+``` Elisp
+(setq x1 (list 'a 'b 'c))
+     ⇒ (a b c)
+(setcdr x1 (cdr (cdr x1)))
+     ⇒ (c)
+x1
+     ⇒ (a c)
+```
+
+``` PlainText
+                   --------------------
+                  |                    |
+ --------------   |   --------------   |    --------------
+| car   | cdr  |  |  | car   | cdr  |   -->| car   | cdr  |
+|   a   |   o-----   |   b   |   o-------->|   c   |  nil |
+|       |      |     |       |      |      |       |      |
+ --------------       --------------        --------------
+```
+
+第二个cons cell以前保存元素b，它仍然存在，它的CAR仍然是b，但是它不再构成这个列表的一部分。
+
+通过更改cdr插入新元素同样容易:
+
+``` Elisp
+(setq x1 (list 'a 'b 'c))
+     ⇒ (a b c)
+(setcdr x1 (cons 'd (cdr x1)))
+     ⇒ (d b c)
+x1
+     ⇒ (a d b c)
+```
+
+``` PlainText
+ --------------        -------------       -------------
+| car  | cdr   |      | car  | cdr  |     | car  | cdr  |
+|   a  |   o   |   -->|   b  |   o------->|   c  |  nil |
+|      |   |   |  |   |      |      |     |      |      |
+ --------- | --   |    -------------       -------------
+           |      |
+     -----         --------
+    |                      |
+    |    ---------------   |
+    |   | car   | cdr   |  |
+     -->|   d   |   o------
+        |       |       |
+         ---------------
+```
+
+
+
+### 5.6.3 Functions that Rearrange Lists ###
+
+下面是一些通过修改列表组件单元格的cdr来破坏性地重新排列列表的函数。这些函数是破坏性的，因为它们会分解作为参数传递给它们的原始列表，重新链接它们的cons单元格，形成一个作为返回值的新列表。
+
+参见使用列表作为集合中的delq，了解另一个修改cons单元格的函数。
+
+#### 函数: `nconc &rest lists` ####
+
+这个函数返回一个包含列表中所有元素的列表。与追加不同(参见构建Cons单元格和列表)，列表不会被复制。相反，将每个列表的最后一个CDR更改为引用以下列表。最后一个列表没有改变。例如:
+
+``` Elisp
+(setq x (list 1 2 3))
+     ⇒ (1 2 3)
+
+(nconc x '(4 5))
+     ⇒ (1 2 3 4 5)
+
+x
+     ⇒ (1 2 3 4 5)
+```
+
+由于nconc的最后一个参数本身没有被修改，因此使用常量列表是合理的，例如'(4 5)，如上例所示。出于同样的原因，最后一个参数不必是一个列表:
+
+``` Elisp
+(setq x (list 1 2 3))
+     ⇒ (1 2 3)
+
+(nconc x 'z)
+     ⇒ (1 2 3 . z)
+
+x
+     ⇒ (1 2 3 . z)
+
+```
+
+然而，其他参数(除了最后一个)应该是可变列表。
+
+一个常见的陷阱是使用常量列表作为nconc的非最后参数。如果这样做，结果行为是未定义的(参见自评估表单 Self-Evaluating Forms)。您的程序每次运行时都可能发生变化!以下是可能发生的情况(虽然不能保证会发生):
+
+``` Elisp
+(defun add-foo (x)            ; We want this function to add
+  (nconc '(foo) x))           ;   foo to the front of its arg.
+
+
+(symbol-function 'add-foo)
+     ⇒ (lambda (x) (nconc '(foo) x))
+
+
+(setq xx (add-foo '(1 2)))    ; It seems to work.
+     ⇒ (foo 1 2)
+
+(setq xy (add-foo '(3 4)))    ; What happened?
+     ⇒ (foo 1 2 3 4)
+
+(eq xx xy)
+     ⇒ t
+
+
+(symbol-function 'add-foo)
+     ⇒ (lambda (x) (nconc '(foo 1 2 3 4) x))
+
+```
+
+#### 5.7 Using Lists as Sets ####
+
+列表可以表示一个无序的数学集——只要将出现在列表中的值视为集合的元素，忽略列表的顺序即可。要形成两个集合的并集，请使用append(只要您不介意有重复的元素)。可以使用delete-dup或seq-uniq删除相同的重复项。其他有用的set函数包括memq和delq，以及它们的等价版本member和delete。
+
+> Common Lisp注意: Common Lisp有联合函数(避免重复元素)和集合操作的交集函数。在Emacs Lisp中，这些功能的变体由cl-lib库提供。参见公共Lisp扩展中的列表作为集合。
+
+#### 函数: `memq object list` ####
+
+这个函数测试对象是否为list的成员。如果是，memq返回一个从object第一次出现开始的列表。否则，它返回nil。memq中的字母“q”表示它使用eq将对象与列表中的元素进行比较。例如:
+
+``` Elisp
+(memq 'b '(a b c b a))
+     ⇒ (b c b a)
+
+(memq '(2) '((1) (2)))    ; The two (2)s need not be eq.
+     ⇒ Unspecified; might be nil or ((2)).
+```
+
+#### 函数: `delq object list` ####
+
+> 这个函数删除第一个元素和中间的元素行为不一样, 它不会更改CAR, 但是会更改CDR
+
+这个函数破坏性地从list中移除所有元素eq到object，并返回结果列表。delq中的字母“q”表示它使用eq将对象与列表中的元素进行比较，如memq和remq。
+
+通常，在调用delq时，应该通过将返回值赋值给保存原始列表的变量来使用返回值。原因解释如下。
+
+delq函数通过简单地向下移动列表来删除列表前面的元素，并返回从这些元素之后开始的子列表。例如:
+
+``` Elisp
+(delq 'a '(a b c)) ≡ (cdr '(a b c))
+```
+
+当要删除的元素出现在列表中间时，删除它涉及更改CDR(参见更改列表的CDR)。
+
+``` Elisp
+(setq sample-list (list 'a 'b 'c '(4)))
+     ⇒ (a b c (4))
+
+(delq 'a sample-list)
+     ⇒ (b c (4))
+
+sample-list
+     ⇒ (a b c (4))
+
+(delq 'c sample-list)
+     ⇒ (a b (4))
+
+sample-list
+     ⇒ (a b (4))
+
+```
+
+注意，`(delq 'c sample-list)` 修改了sample-list以拼接出第三个元素，但是 `(delq 'a sample-list)` 没有拼接任何东西—它只是返回一个更短的列表。不要假设以前保存参数列表的变量现在拥有更少的元素，或者它仍然保存原始列表!相反，保存delq的结果并使用它。大多数情况下，我们将结果存储回保存原始列表的变量中:
+
+``` Elisp
+(setq flowers (delq 'rose flowers))
+```
+
+在下面的例子中，delq试图匹配的(list 4)和样本列表中的(4)是相等的，但不相等:
+
+``` Elisp
+(delq (list 4) sample-list)
+     ⇒ (a c (4))
+```
+
+如果要删除等于给定值的元素，请使用delete(见下文)。
+
+#### 函数: `remq object list` ####
+
+这个函数返回list的一个副本，删除所有eq到object的元素。remq中的字母“q”表示它使用eq将对象与list中的元素进行比较。
+
+``` Elisp
+(setq sample-list (list 'a 'b 'c 'a 'b 'c))
+     ⇒ (a b c a b c)
+
+(remq 'a sample-list)
+     ⇒ (b c b c)
+
+sample-list
+     ⇒ (a b c a b c)
+```
+
+#### 函数: `memql object list` ####
+
+函数memql使用eql将成员与对象进行比较，以测试对象是否为list的成员，因此浮点元素是按值比较的。如果object是一个成员，memql返回一个从它在list中第一次出现开始的列表。否则，它返回nil。
+
+``` Elisp
+(memql 1.2 '(1.1 1.2 1.3))  ; 1.2 and 1.2 are eql.
+     ⇒ (1.2 1.3)
+
+(memq 1.2 '(1.1 1.2 1.3))  ; The two 1.2s need not be eq.
+     ⇒ Unspecified; might be nil or (1.2 1.3).
+```
+
+下面三个函数类似于memq、delq和remq，但使用equal而不是eq来比较元素。参见等式谓词。
+
+#### 函数: `member object list` ####
+
+函数member使用equal将成员与object进行比较，以测试object是否为list的成员。如果object是一个成员，member返回一个从它在list中的第一次出现开始的列表。否则，它返回nil。
+
+将其与memq进行比较:
+
+``` Elisp
+(member '(2) '((1) (2)))  ; (2) and (2) are equal.
+     ⇒ ((2))
+
+(memq '(2) '((1) (2)))    ; The two (2)s need not be eq.
+     ⇒ Unspecified; might be nil or (2).
+
+;; Two strings with the same contents are equal.
+(member "foo" '("foo" "bar"))
+     ⇒ ("foo" "bar")
+
+```
+
+#### 函数: `delete object sequence` ####
+
+这个函数从序列中移除所有等于object的元素，并返回结果序列。
+
+如果sequence是list，则delete与delq的关系就像member与memq的关系一样:它使用equal来比较元素与object的关系，如member;当它找到一个匹配的元素时，就像delq一样删除该元素。与delq一样，通常应该通过将返回值赋值给保存原始列表的变量来使用返回值。
+
+如果sequence是vector或string类型，则delete返回sequence的副本，其中所有元素都等于被移除的对象。
+
+例如:
+
+``` Elisp
+(setq l (list '(2) '(1) '(2)))
+(delete '(2) l)
+     ⇒ ((1))
+l
+     ⇒ ((2) (1))
+;; If you want to change l reliably,
+;; write (setq l (delete '(2) l)).
+
+(setq l (list '(2) '(1) '(2)))
+(delete '(1) l)
+     ⇒ ((2) (2))
+l
+     ⇒ ((2) (2))
+;; In this case, it makes no difference whether you set l,
+;; but you should do so for the sake of the other case.
+
+(delete '(2) [(2) (1) (2)])
+     ⇒ [(1)]
+```
+
+#### 函数: `remove object sequence` ####
+
+这个函数是delete的非破坏性对应函数。它返回sequence、list、vector或string的副本，其中元素等于object removed。例如:
+
+``` Elisp
+(remove '(2) '((2) (1) (2)))
+     ⇒ ((1))
+
+(remove '(2) [(2) (1) (2)])
+     ⇒ [(1)]
+```
+
+> Common Lisp注意:函数member, delete和remove在GNU Emacs Lisp中是从Maclisp派生的，而不是Common Lisp。Common Lisp版本不使用equal来比较元素。
+
+#### 函数: `member-ignore-case object list` ####
+
+这个函数类似于member，除了对象应该是字符串，并且忽略字母和文本表示的差异:大写字母和小写字母被视为相等，并且在比较之前将单字节字符串转换为多字节。
+
+#### 函数: `delete-dups list` ####
+
+这个函数破坏性地从list中删除所有相等的重复项，将结果存储在list中并返回。如果一个元素在list中多次相等地出现，delete-dup会保留第一个元素。非破坏性操作参见seq-uniq(参见序列)。
+
+#### 5.8 Association Lists ####
+
+关联列表(简称列表)记录了从键到值的映射。它是一个被称为关联的cons cell的列表:每个cons单元的CAR是键，CDR是相关联的值
+
+下面是列表的一个例子。键 *pine* 与值 *cones* 相关联; 键 *oak* 与 *acorns* 关联; 而键 *maple* 与 *seeds* 有关。
+
+``` Elisp
+((pine . cones)
+ (oak . acorns)
+ (maple . seeds)) 
+```
+
+列表中的值和键都可以是任何Lisp对象。例如，在下面的列表中，符号a与数字1相关联，字符串“b”与列表 `(2 3)` 相关联，这是列表元素的CDR:
+
+``` Elisp
+((a . 1) ("b" 2 3))
+```
+
+有时，最好设计一个列表，将相关值存储在元素的CDR的CAR中。下面是这样一个列表的例子:
+
+``` Elisp
+((rose red) (lily white) (buttercup yellow))
+```
+
+这里我们把 red 看作与 rose 相关的值。这种列表的一个优点是，您可以在CDR的CDR中存储其他相关信息——甚至是其他项目的列表。缺点之一是不能使用`rassq`(见下文)来查找包含给定值的元素。当这些考虑都不重要时，选择是一个品味问题，只要你对任何给定的列表保持一致。
+
+上面显示的相同列表可以被视为在元素的CDR中具有关联值;与rose相关联的值将是列表 `(red)`。
+
+关联列表通常用于记录可能保存在堆栈中的信息，因为可以很容易地将新的关联添加到列表的前面。在关联列表中搜索具有给定键的关联时，如果有多个关联，则返回找到的第一个关联。
+
+在Emacs Lisp中，如果关联列表中的元素不是cons cells，则不会产生错误。列表搜索函数直接忽略这些元素。在这种情况下，许多其他版本的Lisp都会发出错误信号。
+
+注意，属性列表在几个方面与关联列表相似。属性列表的行为类似于关联列表，其中每个键只能出现一次。有关属性列表和关联列表的比较，请参阅属性列表 Property Lists。
+
+
+#### 函数: `assoc key alist &optional testfn` ####
+
+这个函数返回list中key的第一个关联，如果它是一个函数，则使用testfn将key与list元素进行比较，否则使用 `equals`(参见相等谓词 Equality Predicates)。如果 testfn 是一个函数，则使用两个参数调用它:list中元素的CAR和key。如testfn测试的那样，如果list中没有关联的CAR等于key，则该函数返回nil。例如:
+
+``` Elisp
+(setq trees '((pine . cones) (oak . acorns) (maple . seeds)))
+     ⇒ ((pine . cones) (oak . acorns) (maple . seeds))
+(assoc 'oak trees)
+     ⇒ (oak . acorns)
+(cdr (assoc 'oak trees))
+     ⇒ acorns
+(assoc 'birch trees)
+     ⇒ nil
+```
+
+下面是另一个例子，其中的键和值不是符号:
+
+``` Elisp
+(setq needles-per-cluster
+      '((2 "Austrian Pine" "Red Pine")
+        (3 "Pitch Pine")
+        (5 "White Pine")))
+
+(cdr (assoc 3 needles-per-cluster))
+     ⇒ ("Pitch Pine")
+(cdr (assoc 2 needles-per-cluster))
+     ⇒ ("Austrian Pine" "Red Pine")
+```
+
+函数`assoc-string`与`assoc`非常相似，只是它忽略了字符串之间的某些差异。参见字符和字符串的比较 Comparison of Characters and Strings。
+
+#### 函数: `rassoc value alist` ####
+
+这个函数返回list中与value value的第一个关联。如果列表中没有关联的CDR等于value，则返回nil。
+
+rassoc类似于assoc，只是它比较每个列表关联的CDR而不是CAR。您可以将其视为反向关联，查找给定值的键。
+
+#### 函数: `assq key alist` ####
+
+这个函数类似于assoc，因为它返回list中key的第一个关联，但它使用`eq`进行比较。如果list中没有关联具有CAR eq到key，则asq返回nil。这个函数比assoc更常用，因为eq比equal更快，而且大多数列表使用符号作为键。参见等式谓词。
+
+``` Elisp
+(setq trees '((pine . cones) (oak . acorns) (maple . seeds)))
+     ⇒ ((pine . cones) (oak . acorns) (maple . seeds))
+(assq 'pine trees)
+     ⇒ (pine . cones)
+```
+
+另一方面，在键可能不是符号的列表中，assq通常不太有用:
+
+``` Elisp
+(setq leaves
+      '(("simple leaves" . oak)
+        ("compound leaves" . horsechestnut)))
+
+(assq "simple leaves" leaves)
+     ⇒ Unspecified; might be nil or ("simple leaves" . oak).
+(assoc "simple leaves" leaves)
+     ⇒ ("simple leaves" . oak)
+```
+
+#### 函数: `alist-get key alist &optional default remove testfn` ####
+
+这个函数类似于assq。它查找第一个 `(key . Value)`，如果找到，则返回该关联的值。如果没有找到关联，则该函数返回default。键与列表元素的比较使用testfn指定的函数，默认为eq。
+
+这是一个通用变量(参见通用变量 Generalized Variables)，可以用`setf`来改变一个值。当使用它来设置值时，可选参数remove non-nil意味着如果新值等于默认值，则从列表中删除键的关联。
+
+#### 函数: `rassq value alist` ####
+
+这个函数返回list中与value value的第一个关联。如果list中没有关联具有CDR eq to value，则返回nil。
+
+rassq类似于assq，只是它比较每个列表关联的CDR而不是CAR。你可以把它想象成反向的赋值，找到给定值的键。
+
+例如:
+
+``` Elisp
+(setq trees '((pine . cones) (oak . acorns) (maple . seeds)))
+(rassq 'acorns trees)
+     ⇒ (oak . acorns)
+(rassq 'spores trees)
+     ⇒ nil
+```
+
+rassq不能搜索存储在元素CDR的CAR中的值:
+
+``` Elisp
+(setq colors '((rose red) (lily white) (buttercup yellow)))
+
+(rassq 'white colors)
+     ⇒ nil
+```
+
+在这种情况下，关联 `(lily white)` 的CDR不是符号 white，而是列表 `(white)`。如果将关联写成点对表示法，则会更清楚:
+
+``` Elisp
+(lily white) ≡ (lily . (white))
+```
+
+#### 函数: `assoc-default key alist &optional test default` ####
+
+这个函数在列表中搜索匹配的键。对于list的每个元素，它将元素(如果它是一个原子)或元素的CAR(如果它是一个元素)与key进行比较，方法是用两个参数调用test:元素或它的CAR，以及key。参数按此顺序传递，以便您可以使用包含正则表达式的列表的字符串匹配获得有用的结果(请参阅正则表达式搜索)。如果test省略或为nil，则使用equal进行比较。
+
+如果一个列表元素符合此条件，则关联-default返回一个基于该元素的值。如果元素为cons，则该值为元素的CDR。否则，返回值为default。
+
+如果没有列表元素匹配key，则关联-default返回nil。
+
+#### 函数: `copy-alist alist` ####
+
+这个函数返回list的一个两层two-level深度拷贝:它为每个关联创建一个新的副本，这样你就可以在不改变旧列表的情况下改变新列表的关联。
+
+``` Elisp
+(setq needles-per-cluster
+      '((2 . ("Austrian Pine" "Red Pine"))
+        (3 . ("Pitch Pine"))
+
+        (5 . ("White Pine"))))
+⇒
+((2 "Austrian Pine" "Red Pine")
+ (3 "Pitch Pine")
+ (5 "White Pine"))
+
+(setq copy (copy-alist needles-per-cluster))
+⇒
+((2 "Austrian Pine" "Red Pine")
+ (3 "Pitch Pine")
+ (5 "White Pine"))
+
+(eq needles-per-cluster copy)
+     ⇒ nil
+(equal needles-per-cluster copy)
+     ⇒ t
+(eq (car needles-per-cluster) (car copy))
+     ⇒ nil
+(cdr (car (cdr needles-per-cluster)))
+     ⇒ ("Pitch Pine")
+
+(eq (cdr (car (cdr needles-per-cluster)))
+    (cdr (car (cdr copy))))
+     ⇒ t
+
+```
+
+这个例子展示了copyalist如何在不影响另一个副本的情况下改变一个副本的关联:
+
+``` Elisp
+(setcdr (assq 3 copy) '("Martian Vacuum Pine"))
+(cdr (assq 3 needles-per-cluster))
+     ⇒ ("Pitch Pine")
+```
+
+#### 函数: `assq-delete-all key alist` ####
+
+这个函数从list中删除CAR为eq to key的所有元素，就像使用delq逐个删除每个这样的元素一样。它返回缩短的列表，并且经常修改list的原始列表结构。为了得到正确的结果，使用assq-delete-all的返回值，而不是查看list的保存值。
+
+``` Elisp
+(setq alist (list '(foo 1) '(bar 2) '(foo 3) '(lose 4)))
+     ⇒ ((foo 1) (bar 2) (foo 3) (lose 4))
+(assq-delete-all 'foo alist)
+     ⇒ ((bar 2) (lose 4))
+alist
+     ⇒ ((foo 1) (bar 2) (lose 4))
+```
+
+#### 函数: `assoc-delete-all key alist &optional test` ####
+
+这个函数类似于`assq-delete-all`，不同之处在于它接受一个可选参数test，这是一个比较list中的键的谓词函数。如果省略或为nil，则test默认为equal。作为assq-delete-all，这个函数经常修改list的原始列表结构。
+
+#### 函数: `rassq-delete-all value alist` ####
+
+此函数从列表中删除CDR为eq to value的所有元素。它返回缩短的列表，并且经常修改list的原始列表结构。`rassq-delete-all`类似于 `assq-delete-all`，只是它比较每个列表关联的CDR而不是CAR。
+
+#### 宏: `let-alist alist body` ####
+
+为关联列表列表中用作键的每个符号创建绑定，前缀为点。当访问同一关联列表中的多个项目时，这可能很有用，通过一个简单的例子可以最好地理解它:
+
+``` Elisp
+(setq colors '((rose . red) (lily . white) (buttercup . yellow)))
+(let-alist colors
+  (if (eq .rose 'red)
+      .lily))
+     ⇒ white
+```
+
+在编译时检查 body，并且只检查代码体中带有 `.` 的符号。作为符号名称中的第一个字符将被绑定。查找键是用`assq`完成的，这个`assq`的返回值的cdr被分配为绑定的值。
+
+支持嵌套关联列表:
+
+``` Elisp
+(setq colors '((rose . red) (lily (belladonna . yellow) (brindisi . pink))))
+(let-alist colors
+  (if (eq .rose 'red)
+      .lily.belladonna))
+     ⇒ yellow
+```
+
+允许 `let-list` 相互嵌套，但是内部 `let-list`中的代码不能访问外部 `let-list`绑定的变量。
+
+“键”的这种用法与术语“键序列”无关;它表示用于查找表中的项的值。在本例中，表是列表，列表关联是项。
+
+#### 5.9 Property Lists ####
+
+属性列表(简称*plist*)是成对元素的列表。每一对都将一个属性名(通常是一个符号)与一个属性或值关联起来。下面是一个属性列表的例子:
+
+``` Elisp
+(pine cones numbers (1 2 3) color "blue")
+```
+
+这个属性列表将 pine 与 cones 关联起来，将 numbers 与 (1 2 3) 关联起来，将color与 "blue" 关联起来。属性名和值可以是任何Lisp对象，但名称通常是符号(就像在这个例子中一样)。
+
+属性列表在几个上下文中使用。例如，`put-text-property` 函数接受一个参数，该参数是一个属性列表，指定将应用于字符串或缓冲区中的文本的文本属性和相关值。参见文本属性 Text Properties。
+
+属性列表的另一个重要用途是存储符号属性。每个符号都有一个属性列表，用来记录有关该符号的各种信息;这些属性以属性列表的形式存储。参见符号属性 Symbol Properties。
+
+#### 函数: `plistp object` ####
+
+如果对象是有效的属性列表，则此谓词函数返回非空值。
+
+
+* Property Lists and Association Lists
+* Property Lists Outside Symbols
+
+#### 5.9.1 Property Lists and Association Lists ####
+
+关联列表(参见关联列表)与属性列表非常相似。与关联列表相反，属性列表中对的顺序并不重要，因为属性名称必须不同。
+
+属性列表比关联列表更适合将信息附加到各种Lisp函数名或变量上。如果您的程序将所有这些信息保存在一个关联列表中，则每次检查特定Lisp函数名或变量的关联时，通常需要搜索整个列表，这可能很慢。相比之下，如果在函数名或变量本身的属性列表中保留相同的信息，则每次搜索将只扫描一个属性列表的长度，该属性列表通常很短。这就是为什么变量的文档记录在名为variable-documentation的属性中。字节编译器同样使用属性来记录那些需要特殊处理的函数。
+
+然而，关联列表也有其自身的优势。根据您的应用程序，将关联添加到关联列表的前面可能比更新属性更快。一个符号的所有属性都存储在相同的属性列表中，因此属性名称的不同用法之间有可能发生冲突。(由于这个原因，最好选择可能唯一的属性名，例如在属性名的开头加上程序中变量和函数的常用名称前缀。)关联列表可以像堆栈一样使用，其中关联被推到列表的前面，然后被丢弃;这在属性列表中是不可能的。
+
+#### 5.9.2 Property Lists Outside Symbols ####
+
+以下函数可用于操作属性列表。它们都默认使用eq来比较属性名。
+
+#### 函数: `plist-get plist property &optional predicate` ####
+
+这将返回存储在属性列表列表中的属性属性的值。比较使用默认为eq的predicate完成。它接受一个格式错误的plist参数。如果在列表中没有找到属性，则返回nil。例如,
+
+``` Elisp
+(plist-get '(foo 4) 'foo)
+     ⇒ 4
+(plist-get '(foo 4 bad) 'foo)
+     ⇒ 4
+(plist-get '(foo 4 bad) 'bad)
+     ⇒ nil
+(plist-get '(foo 4 bad) 'bar)
+     ⇒ nil
+```
+
+#### 函数: `plist-put plist property value &optional predicate` ####
+
+这将值存储为属性列表 plist 中属性 property 的值。比较使用默认值为eq的predicate完成。它可以破坏性地修改plist，也可以构造一个新的列表结构而不改变旧的列表结构。该函数返回修改后的属性列表，因此您可以将其存储回获得plist的位置。例如,
+
+``` Elisp
+(setq my-plist (list 'bar t 'foo 4))
+     ⇒ (bar t foo 4)
+(setq my-plist (plist-put my-plist 'foo 69))
+     ⇒ (bar t foo 69)
+(setq my-plist (plist-put my-plist 'quux '(a)))
+     ⇒ (bar t foo 69 quux (a))
+```
+
+#### 函数: `lax-plist-get plist property` ####
+
+这个过时的函数obsolete function类似于plist-get，只是它使用equal而不是eq来比较属性。
+
+#### 函数: `lax-plist-put plist property value` ####
+
+这个过时的函数类似于plist-put，只是它使用equal而不是eq来比较属性。
+
+#### 函数: `plist-member plist property &optional predicate` ####
+
+如果plist包含给定的属性，则返回非nil。比较使用谓词完成，默认为eq。与plist-get不同，它允许您区分缺失属性和值为nil的属性。该值实际上是 car 为property的plist的尾部。
+
+## 6 Sequences, Arrays, and Vectors ##
+
+[Sequences Arrays and Vectors](https://www.gnu.org/software/emacs/manual/html_node/elisp/Sequences-Arrays-Vectors.html)
 
 ---
 
 
 #### 函数: `` ####
+
+
+
+#### 函数: `` ####
+
+
+
+#### 函数: `` ####
+
+
+
+#### 函数: `` ####
+
+
+
+#### 函数: `` ####
+
+
+
+#### 函数: `` ####
+
+
+
+#### 函数: `` ####
+
+
+
+#### 函数: `` ####
+
+
+
+#### 函数: `` ####
+
+
+
+#### 函数: `` ####
+
+
+
+#### 函数: `` ####
+
+
+
+#### 函数: `` ####
+
+
+
+#### 函数: `` ####
+
+
+
+#### 函数: `` ####
+
+
+
+#### 函数: `` ####
+
+
+
+#### 函数: `` ####
+
+
+
+
+
+#### 函数: `` ####
+
+
+
+#### 函数: `` ####
+
+
+
+#### 函数: `` ####
+
 
 
 #### 函数: `` ####
