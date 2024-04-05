@@ -3761,7 +3761,8 @@ ddd"
 
 ``` Elisp
 (format "%c" ?\C-M)
-;  ""
+;  "
+"
 ```
 
 ##### `%e` 指数表示法 #####
@@ -5496,6 +5497,1518 @@ alist
 ## 6 Sequences, Arrays, and Vectors ##
 
 [Sequences Arrays and Vectors](https://www.gnu.org/software/emacs/manual/html_node/elisp/Sequences-Arrays-Vectors.html)
+
+序列类型 *sequence* 是另外两种Lisp类型:列表list和数组array的并集。换句话说，任何列表都是一个序列，任何数组都是一个序列。所有序列都有一个共同的特性，那就是每个序列都是元素的有序集合。
+
+数组是固定长度的对象，每个元素都有一个槽。所有元素都可以在常数时间内访问。数组的四种类型是字符串、向量、字符表和布尔向量。
+
+列表是一个元素序列，但它不是一个单一的原始对象;它由两个单元组成，每个单元一个单元。查找第n个元素需要查找n个cons单元格，因此访问距离列表开头较远的元素需要更长的时间。但是可以向列表中添加元素，或者删除元素。
+
+下图显示了这些类型之间的关系:
+
+``` PlainText
+          _____________________________________________
+         |                                             |
+         |          Sequence                           |
+         |  ______   ________________________________  |
+         | |      | |                                | |
+         | | List | |             Array              | |
+         | |      | |    ________       ________     | |
+         | |______| |   |        |     |        |    | |
+         |          |   | Vector |     | String |    | |
+         |          |   |________|     |________|    | |
+         |          |  ____________   _____________  | |
+         |          | |            | |             | | |
+         |          | | Char-table | | Bool-vector | | |
+         |          | |____________| |_____________| | |
+         |          |________________________________| |
+         |_____________________________________________|
+```
+
+* Sequences
+* Arrays
+* Functions that Operate on Arrays
+* Vectors
+* Functions for Vectors
+* Char-Tables
+* Bool-vectors
+* Managing a Fixed-Size Ring of Objects
+
+### 6.1 Sequences ###
+
+本节描述了接受任何类型序列的函数。
+
+#### 函数: `sequencep object` ####
+
+如果对象是列表、向量、字符串、bool-vector或char-table，则返回t，否则返回nil。另请参见下面的章节。
+
+#### 函数: `length sequence` ####
+
+这个函数返回按顺序排列的元素个数。如果实参不是序列或点列表，则该函数会发出错误类型实参错误信号;如果实参是循环列表，则表示循环列表错误。对于字符表，返回的值总是比最大Emacs字符码多一个。
+
+相关函数safe-length请参见安全长度的定义。
+
+``` Elisp
+(length '(1 2 3))
+    ⇒ 3
+
+(length ())
+    ⇒ 0
+
+(length "foobar")
+    ⇒ 6
+
+(length [1 2 3])
+    ⇒ 3
+
+(length (make-bool-vector 5 nil))
+    ⇒ 5
+```
+
+另请参阅文本表示中的字符串字节。
+
+如果您需要计算显示的字符串的宽度，您应该使用string-width(参见显示文本的大小)，而不是length，因为length只计算字符的数量，但不考虑每个字符的显示宽度。
+
+#### 函数: `length< sequence length` ####
+
+如果序列小于length则返回非nil。如果序列是一个长列表，这可能比计算序列的长度更有效。
+
+#### 函数: `length> sequence length` ####
+
+如果序列长度大于length则返回非nil。
+
+#### 函数: `length= sequence length` ####
+
+如果序列的长度等于length，则返回非nil。
+
+#### 函数: `elt sequence index` ####
+
+这个函数返回按index索引的序列的元素。合法的index值是0到小于序列长度1的整数。如果sequence是一个列表，则超出范围的值的行为与 `nth` 相同。参见nth的定义。否则，超出范围的值将触发 `args-out-of-range`错误。
+
+``` Elisp
+(elt [1 2 3 4] 2)
+     ⇒ 3
+
+(elt '(1 2 3 4) 2)
+     ⇒ 3
+
+;; We use string to show clearly which character elt returns.
+(string (elt "1234" 2))
+     ⇒ "3"
+
+(elt [1 2 3 4] 4)
+     error→ Args out of range: [1 2 3 4], 4
+
+(elt [1 2 3 4] -1)
+     error→ Args out of range: [1 2 3 4], -1
+
+(elt '(1 2 3) -1)
+;  1
+```
+
+这个函数泛化了 `aref`(参见对数组进行操作的函数)和nth(参见nth的定义)。
+
+#### 函数: `copy-sequence seqr` ####
+
+这个函数返回一个seqr的副本，它应该是一个序列或一条记录。副本是与原始对象相同类型的对象，并且具有相同顺序的相同元素。但是，如果seqr为空，如字符串或长度为零的向量，则此函数返回的值可能不是副本，而是与seqr相同类型的空对象。
+
+将新元素存储到副本中不会影响原始seqr，反之亦然。然而，副本的元素不是副本;它们与原版本的元素完全相同。因此，在这些元素中所做的更改(通过副本发现)在原始元素中也是可见的。
+
+如果参数是具有文本属性的字符串，则副本中的属性列表本身就是副本，不与原始属性列表共享。但是，属性的实际值是共享的。参见文本属性。
+
+此函数不适用于点列表。试图复制循环列表可能会导致无限循环。
+
+有关复制序列的其他方法，请参见《构建Cons单元格和列表》中的append，《创建字符串》中的concat，以及《vector函数》中的vconcat。
+
+``` Elisp
+(setq bar (list 1 2))
+     ⇒ (1 2)
+
+(setq x (vector 'foo bar))
+     ⇒ [foo (1 2)]
+
+(setq y (copy-sequence x))
+     ⇒ [foo (1 2)]
+
+
+(eq x y)
+     ⇒ nil
+
+(equal x y)
+     ⇒ t
+
+(eql x y)
+;  nil
+
+(eq (elt x 1) (elt y 1))
+     ⇒ t
+
+
+;; Replacing an element of one sequence.
+(aset x 0 'quux)
+x ⇒ [quux (1 2)]
+y ⇒ [foo (1 2)]
+
+
+;; Modifying the inside of a shared element.
+(setcar (aref x 1) 69)
+x ⇒ [quux (69 2)]
+y ⇒ [foo (69 2)]
+
+```
+
+#### 函数: `reverse sequence` ####
+
+这个函数创建一个新的序列，它的元素是sequence的元素，但是顺序相反。原始参数序列不会改变。注意，char-tables不能反转。
+
+``` Elisp
+(setq x '(1 2 3 4))
+
+(reverse x)
+;  (4 3 2 1)
+
+x
+(1 2 3 4)
+
+(setq x [1 2 3 4])
+
+(reverse x)
+;  [4 3 2 1]
+
+x
+;  [1 2 3 4]
+
+(setq x "xyzzy")
+(reverse x)
+;  "yzzyx"
+x
+; "xyzzy"
+
+```
+
+#### 函数: `nreverse sequence` ####
+
+这个函数颠倒sequence中元素的顺序。与反向不同，原始序列可以被修改。
+
+例如:
+
+``` Elisp
+(setq x (list 'a 'b 'c))
+;  (a b c)
+
+x
+;  (a b c)
+(nreverse x)
+;  (c b a)
+
+;; The cons cell that was first is now last
+x
+;  (a)
+```
+
+为了避免混淆，我们通常将nreverse操作的结果存储回保存原始列表的变量中:
+
+``` Elisp
+(setq x (nreverse x))
+```
+
+这是我们最喜欢的例子(a b c)的 nreverse，用图形表示:
+
+``` PlainText
+Original list head:                       Reversed list:
+ -------------        -------------        ------------
+| car  | cdr  |      | car  | cdr  |      | car | cdr  |
+|   a  |  nil |<--   |   b  |   o  |<--   |   c |   o  |
+|      |      |   |  |      |   |  |   |  |     |   |  |
+ -------------    |   --------- | -    |   -------- | -
+                  |             |      |            |
+                   -------------        ------------
+```
+
+对于vector，它甚至更简单，因为你不需要setq:
+
+``` Elisp
+(setq x (copy-sequence [1 2 3 4]))
+;  [1 2 3 4]
+(nreverse x)
+;  [4 3 2 1]
+x
+;  [4 3 2 1]
+```
+
+请注意，与reverse不同，此函数不适用于字符串。尽管您可以通过使用asset来更改字符串数据，但强烈建议将字符串视为不可变的，即使它们是可变的。见 Mutability。
+
+#### 函数: `sort sequence predicate` ####
+
+这个函数对序列进行稳定排序。注意，这个函数并不适用于所有序列;它只能用于 **列表和向量**。如果sequence是一个列表，则对其进行破坏性修改。该函数返回排序后的序列，并使用谓词比较元素。稳定排序是指具有相同排序键的元素在排序前后保持其相对顺序。当使用逐次排序根据不同的准则对元素排序时，稳定性是很重要的。
+
+参数谓词必须是一个接受两个参数的函数。它被称为具有两个元素的序列。要获得递增顺序排序，如果第一个元素 **小于** 第二个元素，谓词应该返回非nil，否则返回nil。
+
+比较函数谓词必须为任何给定的参数对提供可靠的结果，至少在一个sort调用中是这样。它必须是反对称的;也就是说，如果a小于b, b一定不小于a。它必须是可传递的——也就是说，如果a小于b, b小于c，那么a一定小于c。如果你使用不满足这些要求的比较函数，排序的结果是不可预测的。
+
+列表排序的破坏性方面是，它通过改变它们的内容(可能以不同的顺序重新排列它们)来重用形成序列的单元格。这意味着排序后输入列表的值是未定义的;只有排序返回的列表具有定义良好的值。例子:
+
+``` Elisp
+(setq nums (list 2 1 4 3 0))
+(sort nums #'<)  ;  #'< 是函数的缩写
+;  (0 1 2 3 4)
+;  nums is unpredicable at this point
+```
+
+大多数情况下，我们将结果存储回保存原始列表的变量中:
+
+``` Elisp
+(setq nums (sort nums #'<))
+```
+
+如果你希望在不破坏原稿的情况下制作一份已排序的复本，请先将复本复制，然后再排序:
+
+``` Elisp
+(setq nums (list 2 1 4 3 0))
+(sort (copy-sequence nums) #'<)
+;  (0 1 2 3 4)
+
+nums
+;  (2 1 4 3 0)
+```
+
+为了更好地理解什么是稳定排序，请考虑下面的向量示例。排序后，所有car为8的项被分组在vector的开头，但保持它们的相对顺序。所有car为9的项都分组在vector的末尾，但它们的相对顺序也保持不变:
+
+``` Elisp
+(setq
+  vector
+  (vector '(8 . "xxx") '(9 . "aaa") '(8 . "bbb") '(9 . "zzz")
+          '(9 . "ppp") '(8 . "ttt") '(8 . "eee") '(9 . "fff")))
+;  [(8 . "xxx") (9 . "aaa") (8 . "bbb") (9 . "zzz") (9 . "ppp") (8 . "ttt") (8 . "eee") (9 . "fff")]
+
+(sort vector (lambda (x y) (< (car x) (car y))))
+;  [(8 . "xxx") (8 . "bbb") (8 . "ttt") (8 . "eee") (9 . "aaa") (9 . "zzz") (9 . "ppp") (9 . "fff")]
+```
+
+有关执行排序的更多函数，请参阅排序文本 Sorting Text。有关排序的有用示例，请参阅访问文档字符串中的文档 Access to Documentation Strings。
+
+`seq.el` 库提供了以下附加的序列操作宏和函数，前缀为 `seq-`。
+
+本库中定义的所有函数都没有副作用;也就是说，它们不会修改作为参数传递的任何序列(列表、向量或字符串)。除非另有说明，否则结果是与输入相同类型的序列。对于那些接受谓词的函数，这应该是一个只有一个参数的函数。
+
+`seq.el` 可以扩展库以处理其他类型的顺序数据结构。为此，所有函数都使用 `cl-defgeneric` 定义。有关使用 `cl-defgeneric` 添加扩展的详细信息，请参阅泛型函数 Generic Functions。
+
+#### 函数: `seq-elt sequence index` ####
+
+此函数返回序列在指定索引处的元素，该元素是一个整数，其有效值范围是0到比序列长度小1。对于内置序列类型上的超出范围的值，seq-elt的行为类似于elt。详细信息请参见elt的定义。
+
+``` Elisp
+(seq-elt [1 2 3 4] 2)
+;  3
+```
+
+`seq-elt` 返回可使用 setf 设置的位置place(参见setf宏)。
+
+``` Elisp
+(setq vec [1 2 3 4])
+;  [1 2 3 4]
+(setf (seq-elt vec 2) 5)
+;  5
+vec
+;  [1 2 5 4]
+```
+
+#### 函数: `seq-length sequence` ####
+
+这个函数返回 sequence 中的元素个数。对于内置序列类型，`seq-length` 的行为类似于length。参见长度的定义。
+
+#### 函数: `seqp object` ####
+
+如果object是一个序列(列表或数组)，或通过 seq.el 中的泛型函数定义的任何其他类型的序列，则此函数返回非nil。这是sequencep的可扩展变体。
+
+``` Elisp
+(seqp [1 2])
+;  t
+(seqp 2)
+;  nil
+```
+
+#### 函数: `seq-drop sequence n` ####
+
+这个函数返回 sequence 中除前n个(整数)元素外的所有元素。如果n为负或为零，则结果为 sequence。
+
+``` Elisp
+(seq-drop [1 2 3 4 5 6] 3)
+;  [4 5 6]
+(seq-drop "hello world" -4)
+;  "hello world"
+```
+
+#### 函数: `seq-take sequence n` ####
+
+这个函数返回序列的前n个(整数)元素。如果n为负或为零，则结果为nil。
+
+``` Elisp
+(seq-take '(1 2 3 4) 3)
+;  (1 2 3)
+
+(seq-take [1 2 3 4] 0)
+;  []
+```
+
+#### 函数: `seq-take-while predicate sequence` ####
+
+这个函数按顺序返回序列的成员，在谓词返回nil的第一个成员之前停止。
+
+``` Elisp
+(seq-take-while (lambda (elt) (> elt 0)) '(1 2 3 -1 -2 1))
+;  (1 2 3)
+
+(seq-take-while (lambda (elt) (> elt 0)) [-1 4 6])
+;  []
+```
+
+#### 函数: `seq-drop-while predicate sequence` ####
+
+该函数按顺序返回序列的成员，从谓词返回nil的第一个成员开始, 到最后全部返回。
+
+``` Elisp
+(seq-drop-while (lambda (elt) (> elt 0)) '(1 2 3 -1 -2 1 -1))
+;  (-1 -2 1 -1)
+
+(seq-drop-while (lambda (elt) (< elt 0)) [1 4 6 -1])
+;  [1 4 6 -1]
+```
+
+#### 函数: `seq-split sequence length` ####
+
+emacs 28.2 没有这个函数
+
+这个函数返回一个由(最多)长度为length的序列的子序列组成的列表。(如果序列的长度不是length的倍数，则最后一个元素可能比length短。
+
+``` Elisp
+(seq-split [0 1 2 3 4] 2)
+```
+
+#### 函数: `seq-do function sequence` ####
+
+这个函数依次对sequence中的每个元素应用function(可能是为了产生副作用)，并返回sequence。
+
+这个函数不会用
+
+``` Elisp
+(setq nums '(2 4 6))
+(seq-do #'1+ nums)
+;  (2 4 6)
+nums
+;  (2 4 6)
+```
+
+#### 函数: `seq-map function sequence` ####
+
+这个函数返回对序列的每个元素应用函数的结果。返回值是一个列表。
+
+``` Elisp
+(seq-map #'1+ '(2 4 6))
+;  (3 5 7)
+
+(seq-map #'symbol-name [foo bar])
+;  ("foo" "bar")
+```
+
+#### 函数: `seq-map-indexed function sequence` ####
+
+这个函数返回将函数应用于sequence的每个元素及其在seq中的索引的结果。返回值是一个列表。
+
+``` Elisp
+(seq-map-indexed (lambda (elt idx)
+                   (list idx elt))
+				   '(a b c))
+;  ((0 a) (1 b) (2 c))
+```
+
+#### 函数: `seq-mapn function &rest sequences` ####
+
+这个函数返回对序列的每个元素应用函数的结果。函数的arity(参见 `sub-arity`)必须匹配序列的个数。映射在最短序列的末尾停止，返回值是一个列表。
+
+``` Elisp
+(seq-mapn #'+ '(2 4 6) '(20 40 60))
+;  (22 44 66)
+
+(seq-mapn #'concat '("moskito" "bite") '("bee" "sting"))
+;  ("moskitobee" "bitesting")
+```
+
+#### 函数: `seq-filter predicate sequence` ####
+
+这个函数返回一个序列中所有谓词返回非nil的元素的列表。
+
+``` Elisp
+(seq-filter (lambda (elt) (> elt 0)) [1 -1 3 -3 5])
+;  (1 3 5)
+
+(seq-filter (lambda (elt) (> elt 0)) '(-1 -3 -5))
+;  nil
+```
+
+#### 函数: `seq-remove predicate sequence` ####
+
+这个函数返回一个序列中所有谓词返回nil的元素的列表。
+
+``` Elisp
+(seq-remove (lambda (elt) (> elt 0)) [1 -1 3 -3 5])
+;  (-1 -3)
+
+(seq-remove (lambda (elt) (< elt 0)) '(-1 -3 -5))
+;  nil
+```
+
+#### 函数: `seq-remove-at-position sequence n` ####
+
+这个函数返回一个序列的副本，其中索引为(从零开始)n的元素被删除。结果是一个与sequence类型相同的序列。
+
+emacs 28.2 没有这个函数
+
+``` Elisp
+(seq-remove-at-position [1 -1 3 -3 5] 0)
+⇒ [-1 3 -3 5]
+
+(seq-remove-at-position [1 -1 3 -3 5] 3)
+⇒ [1 -1 3 5]
+```
+
+#### 函数: `seq-keep function sequence` ####
+
+这个函数返回所有非nil结果的列表，这些非nil结果来自于对序列中的元素调用函数。
+
+emacs 28.2 没有这个函数
+
+``` Elisp
+(seq-keep #'cl-digit-char-p '(?6 ?a ?7))
+⇒ (6 7)
+```
+
+#### 函数: `seq-reduce function sequence initial-value` ####
+
+这个函数返回的结果是:调用带有initial-value的函数并调用sequence的第一个元素，然后调用带有该结果和sequence的第二个元素的函数，然后调用带有该结果和sequence的第三个元素的函数，等等。function应该是一个有两个参数的函数。
+
+函数调用时带两个参数。初始值(然后是累积值)用作第一个参数，序列中的元素用于第二个参数。
+
+如果sequence为空，则返回初始值而不调用function。
+
+``` Elisp
+(seq-reduce #'+ [1 2 3 4] 0)
+;  10
+(seq-reduce #'+ '(1 2 3 4) 5)
+;  15
+
+(seq-reduce #'+ '() 3)
+;  3
+
+(seq-reduce #'* '(1 2 3 4) 1)
+;  24
+```
+
+#### 函数: `seq-some predicate sequence` ####
+
+该函数通过对序列的每个元素依次应用谓词返回第一个非nil值。
+
+``` Elisp
+(seq-some #'numberp ["abc" 1 nil])
+;  t
+
+(seq-some #'numberp ["abc" "def"])
+;  nil
+
+(seq-some #'null ["abc" 1 nil])
+;  t
+
+(seq-some #'1+ [2 4 6])
+;  3
+```
+
+#### 函数: `seq-find predicate sequence &optional default` ####
+
+这个函数返回序列中谓词返回非nil的第一个元素。如果没有元素匹配谓词，则返回default。
+
+请注意，如果找到的元素与默认值相同，则此函数具有歧义性，因为在这种情况下，无法知道是否找到了元素。
+
+``` Elisp
+(seq-find #'numberp ["abc" 1 nil])
+;  1
+
+(seq-find #'numberp ["abc" "def"])
+;  nil
+```
+
+#### 函数: `seq-every-p predicate sequence` ####
+
+如果对序列的每个元素应用谓词返回非nil，则此函数返回非nil。
+
+``` Elisp
+(seq-every-p #'numberp [2 4 6])
+;  t
+
+(seq-every-p #'numberp [2 4 ?6])
+;  t
+
+(seq-every-p #'numberp [2 4 "6"])
+;  nil
+```
+
+#### 函数: `seq-empty-p sequence` ####
+
+如果序列为空，则此函数返回非nil。
+
+``` Elisp
+(seq-empty-p "not empty")
+;  nil
+(seq-empty-p "")
+;  t
+```
+
+#### 函数: `seq-count predicate sequence` ####
+
+此函数返回谓词返回非nil的序列中元素的个数。
+
+``` Elisp
+(seq-count (lambda (elt) (> elt 0)) [-1 2 0 3 -2])
+;  2
+```
+
+#### 函数: `seq-sort function sequence` ####
+
+这个函数返回一个序列的副本，该序列按照函数排序，函数有两个参数，如果第一个参数应该在第二个参数之前排序，则返回非nil。
+
+#### 函数: `seq-sort-by function predicate sequence` ####
+
+这个函数类似于seq-sort，但是sequence的元素是通过在排序之前对它们应用函数来转换的。函数是只有一个参数的函数。
+
+``` Elisp
+(seq-sort-by #'seq-length #'> ["a" "ab" "abc"])
+;  ["abc" "ab" "a"]
+```
+
+#### 函数: `seq-contains-p sequence elt &optional function` ####
+
+如果序列中至少有一个元素等于elt，则此函数返回非nil。如果可选参数函数非nil，则它是一个包含两个参数的函数，而不是默认的相等参数。
+
+``` Elisp
+(seq-contains-p '(symbol1 symbol2) 'symbol1)
+⇒ t
+
+⇒ t
+
+(seq-contains-p '(symbol1 symbol2) 'symbol3)
+⇒ nil
+```
+
+#### 函数: `seq-set-equal-p sequence1 sequence2 &optional testfn` ####
+
+这个函数检查sequence1和sequence2是否包含相同的元素，而不管顺序如何。如果可选参数testfn非nil，则它是一个包含两个参数的函数，而不是使用默认的相等参数。
+
+``` Elisp
+(seq-set-equal-p '(a b c) '(c b a))
+;  t
+
+(seq-set-equal-p '(a b c) '(c b))
+;  nil
+
+(seq-set-equal-p '("a" "b" "c") '("c" "b" "a"))
+;  t
+
+(seq-set-equal-p '("a" "b" "c") '("c" "b" "a") #'eq)
+;  nil
+```
+
+#### 函数: `seq-position sequence elt &optional function` ####
+
+这个函数返回序列中第一个等于elt的元素的(从零开始的)索引。如果可选参数函数非nil，则它是一个包含两个参数的函数，而不是默认的相等参数。
+
+``` Elisp
+(seq-position '(a b c) 'b)
+;  1
+
+(seq-position '(a b c) 'd)
+;  nil
+```
+
+#### 函数: `seq-positions sequence elt &optional testfn` ####
+
+这个函数返回一个序列中元素(从零开始)索引的列表，testfn在传递元素和elt作为参数时返回非nil。Testfn默认为equal。
+
+emacs 28.2 没有这个函数
+
+``` Elisp
+(seq-positions '(a b c a d) 'a)
+⇒ (0 3)
+
+(seq-positions '(a b c a d) 'z)
+⇒ nil
+
+(seq-positions '(11 5 7 12 9 15) 10 #'>=)
+⇒ (0 3 5)
+```
+
+#### 函数: `seq-uniq sequence &optional function` ####
+
+这个函数返回一个删除重复项的序列元素列表。如果可选参数函数非nil，则它是一个包含两个参数的函数，而不是默认的相等参数。
+
+``` Elisp
+(seq-uniq '(1 2 2 1 3))
+;  (1 2 3)
+
+(seq-uniq '(1 2 2.0 1.0) #'=)
+; (1 2)
+```
+
+#### 函数: `seq-subseq sequence start &optional end` ####
+
+这个函数从开始到结束返回序列的子集，都是整数(end默认为最后一个元素)。如果start或end为负数，则从序列的末尾开始计数。
+
+``` Elisp
+(seq-subseq '(1 2 3 4 5) 1)
+;  (2 3 4 5)
+
+(seq-subseq '[1 2 3 4 5] 1 3)
+;  [2 3]
+
+(seq-subseq '[1 2 3 4 5] -3 -1)
+;  [3 4]
+```
+
+#### 函数: `seq-concatenate type &rest sequences` ####
+
+这个函数返回由多个序列串联而成的type类型的序列。类型可以是:vector、list或string。
+
+``` Elisp
+(seq-concatenate 'list '(1 2) '(3 4) [5 6])
+;  (1 2 3 4 5 6)
+
+(seq-concatenate 'string "Hello " "world")
+;  "Hello world"
+
+(seq-concatenate 'string '(88 89 90) "Hello")
+;  "XYZHello"
+
+(seq-concatenate 'list "Hello")
+;  (72 101 108 108 111)
+```
+
+#### 函数: `seq-mapcat function sequence &optional type` ####
+
+这个函数返回将seq-concatenate应用于将function应用于sequence的每个元素的结果。结果是type类型的序列，如果type为nil则为列表。
+
+``` Elisp
+(seq-mapcat #'seq-reverse '((3 2 1) (6 5 4)))
+;  (1 2 3 4 5 6)
+```
+
+#### 函数: `seq-partition sequence n` ####
+
+这个函数返回一个序列的元素列表，其中的元素被分组为长度为n的子序列。最后一个序列包含的元素可以少于n。如果n是负整数或0，则返回值为nil。
+
+``` Elisp
+(seq-partition '(0 1 2 3 4 5 6 7) 3)
+;  ((0 1 2) (3 4 5) (6 7))
+```
+
+#### 函数: `seq-union sequence1 sequence2 &optional function` ####
+
+这个函数返回出现在sequence1或sequence2中的元素列表。返回列表的元素都是唯一的，也就是说没有两个元素比较起来相等。如果可选参数函数为非nil，则它应该是一个包含两个参数的函数，用于比较元素，而不是默认的相等。
+
+并集
+
+``` Elisp
+(seq-union [1 2 3] [3 5])
+;  (1 2 3 5)
+```
+
+#### 函数: `seq-intersection sequence1 sequence2 &optional function` ####
+
+这个函数返回一个同时出现在sequence1和sequence2中的元素列表。如果可选参数函数为非nil，则它是一个包含两个参数的函数，用于比较元素，而不是默认的相等。
+
+交集
+
+``` Elisp
+(seq-intersection [2 3 4 5] [1 3 5 6 7])
+;  (3 5)
+```
+
+#### 函数: `seq-difference sequence1 sequence2 &optional function` ####
+
+此函数返回出现在sequence1中但未出现在sequence2中的元素列表。如果可选参数函数为非nil，则它是一个包含两个参数的函数，用于比较元素，而不是默认的相等。
+
+差
+
+``` Elisp
+(seq-difference '(2 3 4 5) [1 3 5 6 7])
+;  (2 4)
+```
+
+#### 函数: `seq-group-by function sequence` ####
+
+这个函数将sequence中的元素分离成一个列表，该列表的键是对sequence中的每个元素应用function的结果。使用equal对键进行比较。
+
+按照 function 对每个元素运算的结果分类
+
+``` Elisp
+(seq-group-by #'integerp '(1 2.1 3 2 3 3.2))
+;  ((t 1 3 2 3) (nil 2.1 3.2))
+
+(seq-group-by #'car '((a 1) (b 2) (a 3) (c 4)))
+;  ((b (b 2)) (a (a 1) (a 3)) (c (c 4)))
+```
+
+#### 函数: `seq-into sequence type` ####
+
+这个函数将序列 sequence 转换为类型为type的序列。类型可以是下列符号之一:vector、string或list。
+
+``` Elisp
+(seq-into [1 2 3] 'list)
+;  (1 2 3)
+
+(seq-into nil 'vector)
+;  []
+
+(seq-into "hello" 'vector)
+;  [104 101 108 108 111]
+```
+
+#### 函数: `seq-min sequence` ####
+
+这个函数返回序列中最小的元素。序列的元素必须是数字或标记(参见标记)。
+
+``` Elisp
+(seq-min [3 1 2])
+;  1
+
+(seq-min "Hello")
+;  72  ?H
+```
+
+#### 函数: `seq-max sequence` ####
+
+这个函数返回序列中最大的元素。序列的元素必须是数字或标记。
+
+``` Elisp
+(seq-max [1 2 3])
+;  3
+
+(seq-max "Hello")
+;  111  ?o
+```
+
+#### 宏: `seq-doseq (var sequence) body` ####
+
+这个宏类似于dolist(参见dolist)，只不过序列可以是列表、向量或字符串。这主要用于 side-effects。
+
+#### 宏: `seq-let var-sequence val-sequence body…..` ####
+
+这个宏将`var-sequence`中定义的变量绑定到 `val-sequence`中相应元素的值。这就是所谓的解构绑定(*destructuring binding*)。var-sequence的元素本身可以包含序列，从而允许嵌套解构。
+
+var-sequence序列还可以包括&rest标记，后面跟着要绑定到val-sequence其余部分的变量名。
+
+``` Elisp
+(seq-let [first second] [1 2 3 4] (list first second))
+;  (1 2)
+
+(seq-let (_ a _ b) '(1 2 3 4) (list a b a b))
+;  (2 4 2 4)
+
+(seq-let [a [b [c]]] [1 [2 [3]]] (list a b c))
+;  (1 2 3)
+
+(seq-let [a b &rest others] [1 2 3 4] others)
+;  [3 4]
+```
+
+pcase模式为解构绑定提供了另一种工具，请参阅使用pcase模式进行解构 Destructuring with pcase Patterns。
+
+#### 宏: `seq-setq var-sequence val-sequence` ####
+
+这个宏的工作方式类似于seq-let，只是将值赋给变量的方式与setq一样，而不是像let绑定那样。
+
+``` Elisp
+(let ((a nil)
+      (b nil))
+  (seq-setq (_ a _ b) '(1 2 3 4))
+  (list a b))
+;  (2 4)
+```
+
+#### 函数: `seq-random-elt sequence` ####
+
+这个函数返回一个随机取的序列元素。
+
+``` Elisp
+(seq-random-elt [1 2 3 4])
+;  3
+;  1
+;  2
+```
+
+如果sequence为空，则该函数发出错误信号。
+
+### 6.2 Arrays ###
+
+数组对象具有存放许多其他Lisp对象的槽，这些对象称为数组的元素。数组中的任何元素都可以在常量时间内被访问。相反，访问列表中元素的时间与该元素在列表中的位置成正比。
+
+Emacs定义了四种数组类型，它们都是一维的:
+
+* 字符串(请参阅字符串类型)
+* 向量(请参阅向量类型)
+* 布尔向量(请参阅布尔向量类型)
+* char-tables(请参阅Char-Table类型)
+
+vector和char-table可以保存任何类型的元素，但是字符串只能保存字符，而bool-vector只能保存t和nil。
+
+这四种数组都有以下特点:
+
+* 数组的第一个元素的索引为0，第二个元素的索引为1，依此类推。这被称为零源索引。例如，一个包含四个元素的数组的下标为0、1、2和3。
+* 一旦你创建了数组，它的长度就固定了;不能更改已存在数组的长度。
+* 为了求值evaluation，数组是一个常量，即:，则求值为自身。
+* 数组的元素可以分别通过函数`aref`和`aset`来引用或修改(参见对数组进行操作的函数 Functions that Operate on Arrays)。
+
+当您创建一个数组，而不是一个字符表时，您必须指定它的长度。您不能指定字符表的长度，因为这是由字符代码的范围决定的。
+
+原则上，如果需要一个文本字符数组，可以使用字符串或向量。在实践中，我们总是为这样的应用程序选择字符串，原因有四个:
+
+1. 它们所占的空间是相同元素向量的四分之一。
+2. 字符串以一种更清晰地显示文本内容的方式打印。
+3. 字符串可以保存文本属性。参见文本属性。
+4. Emacs的许多专门的编辑和I/O工具只接受字符串。例如，不能像插入字符串那样将字符向量插入缓冲区。请参阅字符串和字符。
+
+相比之下，对于键盘输入字符数组(如键序列)，可能需要向量，因为许多键盘输入字符超出了字符串的范围。参见键序列输入 Key Sequence Input。
+
+### 6.3 Functions that Operate on Arrays ###
+
+在本节中，我们将描述接受所有类型数组的函数。
+
+#### 函数: `arrayp object` ####
+
+如果object是数组(即向量、字符串、bool-vector或char-table)，则此函数返回t。
+
+``` Elisp
+(arrayp [a])
+;  t
+
+(arrayp "asdf")
+;  t
+(arrayp (syntax-table))  ;; A char-table
+;  t
+```
+
+#### 函数: `aref arr index` ####
+
+这个函数返回数组或record arr的第indexth元素。第一个元素在索引0处。
+
+``` Elisp
+(setq primes [2 3 5 7 11 13])
+;  [2 3 5 7 11 13]
+(aref primes 4)
+;  11
+
+(aref "abcdefg" 1)
+;  98  ?b
+```
+
+#### 函数: `aset array index object` ####
+
+这个函数将数组的第一个元素设置为object。它返回object。
+
+``` Elisp
+(setq w (vector 'foo 'bar 'baz))
+;  [foo bar baz]
+(aset w 0 'fu)
+;  fu
+w
+;  [fu bar baz]
+(aset w 3 'op)
+;  args-out-of-range [fu bar baz] 3)
+
+;; copy-sequence copies the string to be modified later.
+(setq x (copy-sequence "asdfasdf"))
+;  "asdfasdf"
+(aset x 3 ?Z)
+;  90  ?Z
+x
+;  "asdZasdf"
+```
+
+数组应该是可变的。看到可变性Mutability。
+
+如果array是字符串而object不是字符，则会导致错误的类型参数错误。如果需要插入字符，该函数将单字节字符串转换为多字节字符串。
+
+#### 函数: `fillarray array object` ####
+
+这个函数用object填充数组数组，使数组的每个元素都是object。它返回数组。
+
+``` Elisp
+(setq a (copy-sequence [a b c d e f g]))
+;  [a b c d e f g]
+(fillarray a 0)
+;  [0 0 0 0 0 0 0]
+a
+;  [0 0 0 0 0 0 0]
+
+(setq s (copy-sequence "When in the course"))
+;  "When in the course"
+(fillarray s ?-)
+;  "------------------"
+```
+
+如果array是字符串而object不是字符，则会导致错误的类型参数错误。
+
+一般的序列函数copy-sequence和length对于已知为数组的对象通常很有用。见序列。
+
+### 6.4 Vectors ###
+
+vector是一种通用数组，其元素可以是任何Lisp对象。(相比之下，字符串的元素只能是字符。请参阅字符串和字符。)
+
+向量在Emacs中有很多用途:
+
+* 作为键序列(参见键序列 Key Sequences)
+* 作为符号查找表(参见创建和修改符号 Creating and Interning Symbols)
+* 作为字节编译函数表示的一部分(参见字节编译 Byte Compilation)
+
+与其他数组一样，向量使用零源索引:第一个元素的索引为0。
+
+向量在元素周围用方括号打印。因此，元素为符号a、b和a的向量被打印为`[a b a]`。您可以在Lisp输入中以相同的方式编写向量。
+
+与字符串或数字一样，vector也被认为是求值的常量:求值的结果是相同的vector。它不计算甚至不检查向量的元素。参见自我评价表格Self Evaluating Forms。用方括号写的向量不应该通过`aset`或其他破坏性操作来修改。看到可变性Mutability。
+
+以下是说明这些原则的例子:
+
+``` Elisp
+(setq avector [1 two '(three) "four" [five]])
+;  [1 two '(three) "four" [five]]
+(eval avector)
+;  [1 two '(three) "four" [five]]
+(eq avector (eval avector))
+;  t
+```
+
+### 6.5 Functions for Vectors ###
+
+#### 函数: `vectorp object` ####
+
+如果对象是一个向量，这个函数返回t。
+
+``` Elisp
+(vectorp [a])
+;  t
+(vectorp "asdf")
+;  nil
+```
+#### 函数: `vsctor &rest objects` ####
+
+这个函数创建并返回一个向量，其元素是实参，对象。
+
+``` Elisp
+(vector 'foo 23 [bar baz] "rats")
+; [foo 23 [bar baz] "rats"]
+(vector)
+;  []
+```
+
+#### 函数: `make-vector length object` ####
+
+这个函数返回一个由length元素组成的新向量，每个元素初始化为object。
+
+``` Elisp
+(setq sleepy (make-vector 9 'Z))
+;  [Z Z Z Z Z Z Z Z Z]
+```
+
+#### 函数: `vconcat &rest sequences` ####
+
+这个函数返回一个包含序列所有元素的新向量。实参序列可以是proper lists、向量、字符串或布尔向量。如果没有给出序列，则返回空向量。
+
+该值要么是空向量，要么是新构造的不等于任何现有向量的非空向量。
+
+``` Elisp
+(setq a (vconcat '(A B C) '(D E F)))
+;  [A B C D E F]
+(eq a (vconcat a))
+;  nil
+
+(vconcat)
+;  []
+(vconcat [A B C] "aa" '(foo (6 7)))
+;  [A B C 97 97 foo (6 7)]
+```
+
+vconcat函数还允许 byte-code function对象作为参数。这是一个特殊的特性，可以方便地访问字节码函数对象的全部内容。参见字节码函数对象 Byte-Code Function Objects。
+
+有关其他连接函数，请参见映射函数Mapping Functions 中的`mapconcat`，创建字符串中的concat，以及构建Cons单元格和列表中的append。
+
+append函数还提供了一种将vector转换为具有相同元素的list的方法:
+
+``` Elisp
+(setq avector [1 two (quote (three)) "four" [five]])
+;  [1 two '(three) "four" [five]]
+(append avector nil)
+;  (1 two '(three) "four" [five])
+```
+
+### 6.6 Char-Tables ###
+
+字符表很像矢量，不同之处在于它是由字符代码索引的。任何有效的字符代码(不带修饰符 without modifiers)都可以用作字符表中的索引。您可以使用`aref`和`aset`来访问字符表的元素，就像使用任何数组一样。此外，字符表可以有额外的槽来保存与特定字符代码无关的额外数据。与vector一样，char-table在求值时也是常量，并且可以保存任何类型的元素。
+
+每个char-table都有一个子类型subtyoe(一个符号)，它有两个用途:
+
+1. subtype 提供了一种简单的方法来说明这个char表的用途。例如，`display-table` 是以`display-table`为子类型的char-table，`syntax-table` 是以`syntax-table`为子类型的char-table。可以使用下面描述的 `char-table-subtype` 函数查询子类型。
+2. 子类型控制char-table中额外槽的数量。这个数字由子类型的 `char-table-extra-slots` 符号属性指定(参见符号属性Symbol Properties)，其值应该是0到10之间的整数。如果子类型没有这样的符号属性，则char-table没有额外的槽。
+
+一个char-table可以有一个 *parent*，parent 是另一个char-table。如果是这样，那么每当char-table为特定字符c指定nil时，它将继承父元素中指定的值。换句话说，如果char-table本身指定nil，则 `(aref char-table c)` 返回来自char-table父节点的值。
+
+一个字符表char-table也可以有一个默认值。如果是，则 `(aref char-table c)` 在char-table没有指定任何其他非空值时返回默认值。
+
+#### 函数: `make-char-table subtype &optional init` ####
+
+返回一个新创建的字符表，子类型为subtype(一个符号)。每个元素初始化为init，默认为nil。创建char-table后，不能更改其子类型。
+
+没有参数指定char-table的长度，因为所有char-table都有空间容纳任何有效的字符代码作为索引。
+
+如果子类型具有 `char-table-extra-slots` 符号属性，则指定char-table中额外插槽的数量。这应该是一个0到10之间的整数;否则，`make-char-table` 会引发一个错误。如果子类型没有char-table-extra-slots符号属性(参见属性列表 Property Lists)，则该char-table没有额外的slot。
+
+#### 函数: `char-table-p object` ####
+
+如果object是一个char-table，这个函数返回t，否则返回nil。
+
+#### 函数: `char-table-subtype char-table` ####
+
+这个函数返回char-table的子类型符号。
+
+没有特殊的函数可以访问字符表中的默认值。要做到这一点，请使用 `char-table-range`(见下文)。
+
+#### 函数: `char-table-parent char-table` ####
+
+这个函数返回char-table的父元素。父对象总是nil或另一个char-table。
+
+#### 函数: `set-char-table-parent char-table new-parent` ####
+
+这个函数将char-table的父节点设置为new-parent。
+
+#### 函数: `char-table-extra-slot char-table n` ####
+
+这个函数返回char-table的额外槽n(从零开始)的内容。字符表中额外插槽的数量由其子类型决定。
+
+#### 函数: `set-char-table-extra-slot char-table n value` ####
+
+此函数将值存储在char-table的额外槽n(从零开始)中。
+
+字符表可以为单个字符代码指定元素值;它还可以为整个字符集指定一个值。
+
+#### 函数: `char-table-range char-table range` ####
+
+这将返回char-table中指定的字符范围的值。以下是范围的可能性:
+
+* `nil` 默认值
+* `char` 引用字符char的元素(假设char是一个有效的字符代码)。
+* `(from . to)` cons cell 指的是包含范围 `[from..to]` 中的所有字符。在本例中，函数返回由from指定的字符的值。
+
+#### 函数: `set-char-table-range char-table range value` ####
+
+这个函数在char-table中设置一个字符范围的值。以下是范围的可能性:
+
+* `nil` 默认值
+* `t` 指的是字符码的全部范围。
+* `char` 引用字符char的元素(假设char是一个有效的字符代码)。
+* `(from . to)` cons cell指的是包含范围 `[from..to]` 中的所有字符。
+
+#### 函数: `map-char-table function char-table` ####
+
+此函数为char-table中具有非空值的每个元素调用其参数函数。函数调用有两个参数，一个键和一个值。键是char-table-range的一个可能的范围参数——一个有效字符或一个 cons cell `(from . to)`，指定共享相同值的字符范围。该值是 `(char-table-range char-table key)` 返回的值。
+
+总的来说，传递给函数的键值对描述了存储在char-table中的所有值。
+
+返回值总是nil;为了使对map-char-table的调用有用，函数应该具有副作用。例如，下面是如何检查语法表中的元素:
+
+``` Elisp
+(let (accumulator)
+   (map-char-table
+    (lambda (key value)
+      (setq accumulator
+            (cons (list
+                   (if (consp key)
+                       (list (car key) (cdr key))
+                     key)
+                   value)
+                  accumulator)))
+    (syntax-table))
+   accumulator)
+⇒
+(((2597602 4194303) (2)) ((2597523 2597601) (3))
+ ... (65379 (5 . 65378)) (65378 (4 . 65379)) (65377 (1))
+ ... (12 (0)) (11 (3)) (10 (12)) (9 (0)) ((0 8) (3)))
+```
+
+### 6.7 Bool-vectors ###
+
+bool-vector与vector非常相似，只不过它只存储值t和nil。如果试图将任何非nil值存储到bool向量的元素中，结果是将t存储在那里。与所有数组一样，布尔向量的索引从0开始，一旦创建了布尔向量，长度就不能改变。布尔向量在求值时是常量。
+
+有几个函数专门处理布尔向量;除此之外，您还可以使用用于其他类型数组的相同函数来操作它们。
+
+#### 函数: `make-bool-vector length initial` ####
+
+返回一个包含长度元素的新bool-vector，每个元素初始化为initial。
+
+#### 函数: `bool-vector &rest objects` ####
+
+这个函数创建并返回一个布尔向量，其元素是实参，对象。
+
+``` Elisp
+(bool-vector t t t nil)
+;  值为 7, 二进制 1110
+(bool-vector t t t nil t nil t t)
+;  #&8"\327"
+;  也就是?\327, 八进制 #o327, 十六进制 #xd7, 二进制#b11101011
+```
+
+#### 函数: `bool-vector-p object` ####
+
+如果object是布尔向量，则返回t，否则返回nil。
+
+还有一些布尔向量集操作函数，描述如下:
+
+#### 函数: `bool-vector-exclusive-or a b &optional c` ####
+
+返回bool向量a和b的位异或。如果给出可选参数c，则此操作的结果存储在c中。所有参数都应该是长度相同的bool向量。
+
+``` Elisp
+(setq a (bool-vector t t)
+      b (bool-vector nil t))
+(bool-vector-exclusive-or a b)
+;  #x1, #b01
+```
+
+#### 函数: `bool-vector-union a b &optional c` ####
+
+返回bool向量a和b的按位或值。如果给出可选参数c，则此操作的结果存储在c中。所有参数都应该是长度相同的bool向量。
+
+``` Elisp
+(bool-vector-union (bool-vector t t)
+                   (bool-vector nil t))
+;  #x3, #b11
+```
+
+#### 函数: `bool-vector-intersection a b &optional c` ####
+
+按位返回bool向量a和b的且。如果给出可选参数c，则此操作的结果存储在c中。所有参数都应该是长度相同的bool向量。
+
+``` Elisp
+(bool-vector-intersection (bool-vector t nil)
+                          (bool-vector nil t))
+```
+
+#### 函数: `bool-vector-set-difference a b &optional c` ####
+
+返回bool向量a和b的集合差值。如果给出可选参数c，则此操作的结果存储在c中。所有参数都应该是相同长度的bool向量。
+
+不懂
+
+``` Elisp
+(bool-vector-set-difference (bool-vector t t)
+	                        (bool-vector t nil))
+;  2, #b10
+
+(bool-vector-set-difference (bool-vector t t t)
+	                        (bool-vector t nil t))
+;  2, #b010
+
+(bool-vector-set-difference (bool-vector t t)
+	                        (bool-vector t t))
+
+(bool-vector-set-difference (bool-vector t t)
+	                        (bool-vector nil nil))
+;  #b11
+```
+
+#### 函数: `bool-vector-not a &optional b` ####
+
+返回bool向量a的集合补集。如果给出了可选参数b，则此操作的结果存储在b中。所有参数都应该是长度相同的bool向量。
+
+#### 函数: `bool-vector-subsetp a b` ####
+
+如果a中的每个t值也是b中的t，则返回t，否则返回nil。所有参数都应该是相同长度的bool向量。
+
+a 是否是 b 的子集
+
+``` Elisp
+(bool-vector-subsetp (bool-vector t nil t)
+                     (bool-vector t t t))
+;  t
+```
+
+#### 函数: `bool-vector-count-consecutive a b i` ####
+
+返回a中从i开始等于b的连续元素的个数。a是bool向量，b是t或nil, i是a的索引。
+
+``` Elisp
+(bool-vector-count-consecutive (bool-vector t t nil t)
+                               t
+							   0)
+;  2
+(bool-vector-count-consecutive (bool-vector t t nil t)
+                               nil
+							   2)
+;  1
+(bool-vector-count-consecutive (bool-vector t t nil t)
+                               nil
+							   0)
+;  0
+```
+
+#### 函数: `bool-vector-count-population a` ####
+
+返回bool向量a中为t的元素个数。
+
+``` Elisp
+(bool-vector-count-population (bool-vector nil t t))
+;  2
+```
+
+打印的形式表示多达8个布尔值作为一个字符:
+
+``` Elisp
+(bool-vector t nil t nil)
+(bool-vector)
+;  #&0""
+```
+
+你可以使用vconcat像打印其他向量一样打印一个bool向量:
+
+``` Elisp
+(vconcat (bool-vector nil t nil t))
+;  [nil t nil t]
+```
+
+下面是另一个创建、检查和更新bool vector的例子:
+
+``` Elisp
+(setq bv (make-bool-vector 5 t))
+(vconcat bv)
+;  [t t t t t]
+(aref bv 1)
+;  t
+(aset bv 3 nil)
+;  nil
+bv
+(vconcat bv)
+;  [t t t nil t]
+;  #b10111
+
+(bool-vector t t t nil t)
+```
+
+这些结果是有意义的，因为 `control-_` 和 `control-W`的二进制代码分别是11111和10111。
+
+``` Elisp
+(bool-vector nil nil t t)
+;  #b1100
+```
+
+### 6.8 Managing a Fixed-Size Ring of Objects ###
+
+环(ring) 是一种固定大小的数据结构，支持插入、删除、旋转以及模索引引用和遍历。
+
+* insertion 插入
+* deletion 删除
+* rotation 旋转
+* modulo-indexed reference 模索引引用
+* traversal 遍历
+
+利用 ring package 实现了一种高效的环数据结构。它提供了本节中列出的功能。
+
+> 请注意，Emacs中的几个环，如kill ring和mark ring，实际上是作为简单列表实现的，而不是使用ring包;因此，下面的函数对它们不起作用。
+
+#### 函数: `make-ring size` ####
+
+这将返回一个能够容纳size对象的新环。Size应该是一个整数。
+
+``` Elisp
+(make-ring 5)
+;  (0 0 . [nil nil nil nil nil])
+(make-ring 1)
+;  (0 0 . [nil])
+(make-ring 0)
+;  (0 0 . [])
+```
+
+#### 函数: `ring-p object` ####
+
+如果object是一个环，则返回t，否则返回nil。
+
+#### 函数: `ring-size ring` ####
+
+这将返回环的最大容量。
+
+``` Elisp
+(ring-size (make-ring 5))
+;  5
+```
+
+#### 函数: `ring-length ring` ####
+
+返回ring当前包含的对象数。该值永远不会超过ring-size返回的值。
+
+``` Elisp
+(ring-length (make-ring 5))
+;  0
+```
+
+#### 函数: `ring-elements ring` ####
+
+这将返回一个对象列表，按顺序排列，最新的在前。
+
+#### 函数: `ring-copy ring` ####
+
+这将返回一个新的ring，它是ring的副本。新的ring包含与ring相同的(eq)对象。
+
+#### 函数: `ring-empty-p ring` ####
+
+如果ring为空，则返回t，否则返回nil。
+
+#### 环的索引 ####
+
+环中最新的元素总是索引为0。较高的索引对应于较老的元素。
+
+索引按环长模计算。`−1`对应最老的元素，`−2`对应次老的元素，以此类推。
+
+#### 函数: `ring-ref ring index` ####
+
+这将返回在索引 index处找到的环中的对象。索引可以是负数，也可以大于环的长度。如果ring为空，ring-ref表示错误。
+
+#### 函数: `ring-insert ring object` ####
+
+这将对象插入到环中，使其成为最新的元素，并返回对象。
+
+如果环已满，则插入将删除最老的元素，为新元素腾出空间。
+
+``` Elisp
+(setq ring-1 (make-ring 5))
+;  (0 0 . [nil nil nil nil nil])
+(ring-insert ring-1 'a)
+;  a
+ring-1
+;  (0 1 . [a nil nil nil nil])
+(ring-ref ring-1 0)
+;  a
+(ring-elements ring-1)
+;  (a)
+```
+
+#### 函数: `ring-remove ring &optional index` ####
+
+从环中移除一个对象，并返回该对象。参数index指定要删除的项;如果它是nil，那就意味着删除最老的项。如果ring为空，ring-remove表示错误。
+
+``` Elisp
+(setq ring-1 (make-ring 2))
+;  (0 0 . [nil nil])
+
+(ring-insert ring-1 'a)
+;  a
+
+ring-1
+;  (0 1 . [a nil])
+
+(ring-insert ring-1 'b)
+;  b
+
+ring-1
+;  (0 2 . [a b])
+
+(ring-insert ring-1 'c)
+;  c
+
+ring-1
+;  (1 2 . [c b])
+
+(ring-remove ring-1 -1)
+;  b
+
+ring-1
+;  (1 1 . [nil c])
+
+(ring-remove ring-1)
+;  c
+ring-1
+;  (1 0 . [nil nil])
+
+(ring-insert ring-1 'd)
+;  d
+ring-1
+;  (1 1 . [nil d])
+(ring-insert ring-1 'e)
+;  e
+ring-1
+;  (1 2 . [e d])
+(ring-insert ring-1 'f)
+;  f
+ring-1
+;  (0 2 . [e f])
+```
+
+#### 函数: `ring-insert-at-beginning ring object` ####
+
+这将对象插入到ring中，并将其视为最古老的元素。返回值不重要。
+
+如果环已满，则该函数删除最新的元素，为插入的元素腾出空间。
+
+``` Elisp
+(setq ring-2 (make-ring 2))
+(0 0 . [nil nil])
+
+(ring-insert-at-beginning ring-2 'a)
+;  1
+ring-2
+;  (1 1 . [nil a])
+
+(ring-insert-at-beginning ring-2 'b)
+;  2
+ring-2
+;  (0 2 . [b a])
+
+(ring-insert-at-beginning ring-2 'c)
+;  2
+ring-2
+(1 2 . [b c])
+
+(ring-insert ring-2 'd)
+;  d
+ring-2
+;  (0 2 . [b d])
+
+(ring-insert-at-beginning ring-2 'e)
+;  2
+ring-2
+;  (1 2 . [b e])
+```
+
+#### 函数: `ring-resize ring size` ####
+
+设置 ring 的大小为size。如果新size较小，则丢弃环中最旧的项。
+
+如果您注意不要超过环的大小，您可以将环用作先进先出队列。例如:
+
+``` Elisp
+(let ((fifo (make-ring 5)))
+  (mapc (lambda (obj) (ring-insert fifo obj))
+        '(0 one "two"))
+  (list (ring-remove fifo) t
+        (ring-remove fifo) t
+		(ring-remove fifo)))
+;  (0 t one t "two")
+```
+
+## 7 Records ##
+
+records 的目的是允许程序员创建具有Emacs中没有内置的新类型的对象。它们被用作cl-defstruct和defclass实例的底层表示。
+
+
+
+
+
+
+
+
 
 ---
 
