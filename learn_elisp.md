@@ -1,5 +1,7 @@
 # 学习Elisp #
 
+[TOC]
+
 ## 2 Lisp 数据类型 ##
 
 内置到Emacs中的类型叫做 *primitive types*
@@ -7756,6 +7758,510 @@ count
 ## 10 Evaluation ##
 
 [Evaluation](https://www.gnu.org/software/emacs/manual/html_node/elisp/Evaluation.html)
+
+在Emacs Lisp中，表达式的求值是由Lisp解释器执行的——Lisp解释器是一个接收Lisp对象作为输入并将其值作为表达式计算出来的程序。这取决于对象的数据类型，根据本章描述的规则。解释器自动运行以计算程序的部分，但也可以通过Lisp原始函数eval显式调用。
+
+
+* Introduction to Evaluation
+* Kinds of Forms
+* Quoting
+* Backquote
+* Eval
+* Deferred and Lazy Evaluation
+
+### 10.1 Introduction to Evaluation ###
+
+Lisp解释器或求值器是Emacs的一部分，用于计算给定表达式的值。当调用用Lisp编写的函数时，求值器通过计算函数体中的表达式来计算函数的值。因此，运行任何Lisp程序实际上意味着运行Lisp解释器。
+
+用于求值的Lisp对象称为形式 *form* 或表达式 *expression*。forms 是数据对象而不仅仅是文本这一事实是类lisp语言和典型编程语言之间的根本区别之一。任何对象都可以求值，但实际上只有数字、符号、列表和字符串经常被求值。
+
+在随后的部分中，我们将详细描述每种形式的求值含义。
+
+读取一个Lisp表单然后求值是很常见的，但是读取和求值是独立的活动，两者都可以单独执行。读取本身并不能评价任何东西;它将Lisp对象的打印表示形式转换为对象本身。由read的调用者来指定该对象是要求值的形式，还是用于完全不同的目的。参见输入函数 Input Functions。
+
+求值是一个递归过程，对form求值通常涉及对该表单中的各个部分求值。例如，当你计算一个函数调用形式，如(car x)， Emacs首先计算参数(子形式x)。计算参数后，Emacs执行函数(car)，如果函数是用Lisp编写的，执行工作通过计算函数体(然而，在这个例子中，car不是一个Lisp函数;它是在C语言中实现的原始函数。有关函数和函数调用的更多信息，请参阅函数Functions。
+
+求值在称为环境的上下文中进行，该上下文中包含所有Lisp变量的当前值和绑定(参见变量)每当form引用变量而不为其创建新绑定时，该变量的计算结果为当前环境给出的值。评估form也可能通过绑定变量临时改变环境(参见局部变量)。
+
+对form进行评估也可能产生持久的更改;这些变化被称为副作用 *side effects*。一个产生副作用的form示例是 `(setq foo 1)`。
+
+不要将 求值evaluation 与 命令键解释command key interpretation 混淆。编辑器命令循环使用活动键映射将键盘输入转换为命令(可交互调用的函数)，然后使用调用交互方式执行该命令。如果命令是用Lisp编写的，执行命令通常涉及求值;但是，这个步骤不被认为是命令键解释的一部分。参见命令循环 Command Loop。
+
+### 10.2 Kinds of Forms ###
+
+用于求值的Lisp对象称为形式 form (或表达式 expression)。Emacs计算form的方式取决于form的数据类型。Emacs有三种不同的形式，它们的计算方式不同:
+
+1. 符号
+2. 列表
+3, 所有其他类型
+
+本节将逐一介绍这三种类型，从其他类型开始，这些类型是自评估表单 Self-evaluating forms。
+
+* Self-Evaluating Forms
+* Symbol Forms
+* Classification of List Forms
+* Symbol Function Indirection
+* Evaluation of Function Forms
+* Lisp Macro Evaluation
+* Special Forms
+* Autoloading
+
+#### 10.2.1 Self-Evaluating Forms ####
+
+一个自我求值的形式是除了列表或符号以外的任何形式。自我求值形式是对自己的求值:求值的结果就是被求值的对象。因此，数字25的计算结果为25，字符串“foo”的计算结果为字符串“foo”。同样，对vector求值不会导致对vector的元素求值——它返回内容不变的同一个vector。
+
+``` Elisp
+'123               ; A number, shown without evaluation.
+     ⇒ 123
+123                ; Evaluated as usual—result is the same.
+     ⇒ 123
+(eval '123)        ; Evaluated "by hand"—result is the same.
+     ⇒ 123
+(eval (eval '123)) ; Evaluating twice changes nothing.
+     ⇒ 123
+```
+
+自求值形式产生的值成为程序的一部分，您不应该尝试通过`setcar`、`aset`或类似操作来修改它。Lisp解释器可以统一程序的自求值形式产生的常量，以便这些常量可以共享结构。见可变性 Mutability。
+
+在Lisp代码中编写数字、字符、字符串甚至向量是很常见的，这利用了它们的自求值特性。然而，对于缺乏读语法的类型，这样做是非常不寻常的，因为没有办法以文本方式编写它们。通过Lisp程序可以构造包含这些类型的Lisp表达式。下面是一个例子:
+
+``` Elisp
+;; Build an expression containing a buffer object.
+(setq print-exp (list 'print (current-buffer)))
+     ⇒ (print #<buffer eval.texi>)
+
+;; Evaluate it.
+(eval print-exp)
+     -| #<buffer eval.texi>
+     ⇒ #<buffer eval.texi>
+```
+
+#### 10.2.2 Symbol Forms ####
+
+当一个符号被求值时，它被视为一个变量。结果是变量的值(如果它有)。如果符号没有作为变量的值，Lisp解释器发出错误信号。有关变量使用的更多信息，请参见变量。
+
+在下面的示例中，我们使用setq设置符号的值。然后对符号求值，并返回setq存储的值。
+
+``` Elisp
+(setq a 123)
+     ⇒ 123
+
+(eval 'a)
+     ⇒ 123
+
+a
+     ⇒ 123
+```
+
+符号nil和t被特殊处理，因此nil的值总是nil，而t的值总是t;您不能将它们设置或绑定到任何其他值。因此，这两个符号就像自求值形式一样，尽管eval把它们当作任何其他符号来对待。名称以':'开头的符号也以同样的方式进行自求值;同样，它的值通常不能更改。参见永远不变的变量 Variables that Never Change。
+
+#### 10.2.3 Classification of List Forms ####
+
+非空列表的形式根据其第一个元素是函数调用、宏调用或特殊形式。这三种形式以不同的方式进行求值，如下所述。其余列表元素构成函数、宏或特殊形式的参数。
+
+计算非空列表的第一步是检查它的第一个元素。这个元素单独决定了列表的形式，以及如何处理列表的其余部分。不计算第一个元素，就像在Scheme等一些Lisp方言中那样。
+
+#### 10.2.4 Symbol Function Indirection ####
+
+[Symbol Function Indirection](https://www.gnu.org/software/emacs/manual/html_node/elisp/Function-Indirection.html)
+
+如果列表的第一个元素是一个符号，则求值检查该符号的函数单元格，并使用其内容而不是原始符号。如果内容是另一个符号，则重复这个过程，称为符号间接函数，直到它获得一个非符号。有关符号间接函数的更多信息，请参见命名函数 Naming a Function。
+
+这个过程的一个可能结果是无限循环，如果一个符号的函数单元指向同一个符号。否则，我们最终得到一个非符号，它应该是一个函数或其他合适的对象。
+
+更准确地说，我们现在应该有一个Lisp函数(lambda表达式)、一个字节码函数、一个原语函数、一个Lisp宏、一个特殊形式或一个自动加载对象。这些类型中的每一种都是以下章节中描述的一种情况。如果对象不是这些类型之一，Emacs将发出无效函数错误信号。
+
+下面的示例说明了符号间接过程。我们使用 `fset` 来设置符号的函数单元，`symbol-function` 来获取函数单元的内容(参见访问函数单元内容 Accessing Function Cell Contents)。具体来说，我们将符号 `car` 存储到 `first` 的函数单元中，将符号`first`存储到`erste`的函数单元中。
+
+``` PlainText
+;; Build this function cell linkage:
+;;   -------------       -----        -------        -------
+;;  | #<subr car> | <-- | car |  <-- | first |  <-- | erste |
+;;   -------------       -----        -------        -------
+
+(symbol-function 'car)
+     ⇒ #<subr car>
+
+(fset 'first 'car)
+     ⇒ car
+
+(fset 'erste 'first)
+     ⇒ first
+
+(erste '(1 2 3))   ; Call the function referenced by erste.
+     ⇒ 1
+
+```
+
+相比之下，下面的例子调用了一个没有间接符号函数的函数，因为第一个元素是一个匿名Lisp函数，而不是符号。
+
+``` Elisp
+((lambda (arg) (erste arg))
+ '(1 2 3))
+     ⇒ 1
+```
+
+执行函数本身对函数体求值;这确实涉及到调用erste时间接的符号函数。
+
+这种形式很少使用，现在已弃用。相反，你应该这样写:
+
+``` Elisp
+(funcall (lambda (arg) (erste arg))
+         '(1 2 3))
+```
+
+或者
+
+``` Elisp
+(let ((arg '(1 2 3))) (erste arg))
+```
+
+内置函数 `indirect-function` 提供了一种简单的方法来显式地执行符号函数间接。
+
+##### 函数: `indirect-function function &optional noerror` #####
+
+这个函数以函数的形式返回函数的含义。如果function是一个符号，那么它找到function的函数定义，并从该值开始。如果function不是一个符号，那么它返回function本身。
+
+如果最后一个符号未绑定，则此函数返回nil。如果符号链中存在循环，则表示循环函数间接错误。
+
+可选参数noerror已经过时了，保留它是为了向后兼容，没有任何作用。
+
+下面是如何在Lisp中定义间接函数:
+
+``` Elisp
+(defun indirect-function (function)
+  (if (and function
+           (symbolp function))
+      (indirect-function (symbol-function function))
+    function))
+```
+
+#### 10.2.5 Evaluation of Function Forms ####
+
+如果要计算的列表的第一个元素是Lisp函数对象、字节码对象或基本函数对象，则该列表是一个函数调用。例如，下面是对函数 `+` 的调用:
+
+``` Elisp
+(1+ x)
+```
+
+计算函数调用的第一步是从左到右计算列表中剩余的元素。结果是实际的参数值，每个列表元素对应一个值。下一步是使用这个参数列表调用函数，有效地使用apply函数(参见调用函数)。如果函数是用Lisp编写的，则参数用于绑定函数的参数变量(参见Lambda表达式);然后按顺序计算函数体中的形式，最后一个形式的值成为函数调用的值。
+
+#### 10.2.6 Lisp Macro Evaluation ####
+
+如果正在求值的列表的第一个元素是一个宏对象，那么该列表就是一个宏调用。当计算宏调用时，列表其余部分的元素不会初始计算。相反，这些元素本身被用作宏的参数。宏定义计算一种替代形式，称为宏的展开，以代替原始形式进行计算。展开可以是任何形式:自求值常数、符号或列表。如果展开本身是一个宏调用，那么这个展开过程会重复，直到出现其他形式。
+
+宏调用的普通求值通过求展开结束。然而，宏展开不一定会立即求值，或者根本不会求值，因为其他程序也会展开宏调用，它们可能会也可能不会求值展开。
+
+通常，参数表达式不作为计算宏展开的一部分进行计算，而是作为展开的一部分出现，因此在计算展开时计算它们。
+
+例如，给定如下定义的宏:
+
+``` Elisp
+(defmacro cadr (x)
+  (list 'car (list 'cdr x)))
+```
+
+像 `(cadr (assq 'handler list))` 这样的表达式是一个宏调用，其展开为:
+
+``` Elisp
+(car (cdr (assq 'handler list)))
+```
+
+注意，参数 `(assq 'handler list)` 出现在展开中。
+
+有关Emacs Lisp宏的完整描述，请参阅宏。
+
+#### 10.2.7 Special Forms ####
+
+一种特殊形式是特别标记的原语，这样它的参数就不会全部求值。大多数特殊的form定义控制结构或执行变量绑定——这些都是函数无法做到的。
+
+每种特殊形式都有自己的规则，对哪些参数求值，哪些不求值。是否评估一个特定的论证可能取决于评估其他论证的结果。
+
+如果表达式的第一个符号是特殊形式的符号，则表达式应遵循该特殊形式的规则;否则，Emacs的行为就没有很好的定义(尽管它不会崩溃)。例如， `((lambda (x) x . 3) 4)` 包含以lambda开头的子表达式，但不是格式良好的lambda表达式，因此Emacs可能会发出错误信号，或者可能返回3、4或nil，或者可能以其他方式表现。
+
+##### 函数: `special-form-p object` #####
+
+该谓词测试其参数是否为特殊形式，如果是则返回t，否则返回nil。
+
+下面是Emacs Lisp中所有特殊形式的列表，按字母顺序排列，并提供了描述每种形式的参考。
+
+* `and` 见 Constructs for Combining Conditions
+* `catch` 见 Explicit Nonlocal Exits: catch and throw
+* `cond` 见 Conditionals
+* `condition-case` 见 Writing Code to Handle Errors
+* `defconst` 见 Defining Global Variables
+* `defvar` 见 Defining Global Variables
+* `function` 见 Anonymous Functions
+* `if` 见 Conditions
+* `interactive` 见 Interactive Call
+* `lambda` 见 Lambda Expressions
+* `let`, `let*` 见 Local Variables
+* `or` 见 Constructs for Combining Conditions
+* `prog1`, `prog2`, `progn` 见 Sequencing
+* `quote` 见 Quoting
+* `save-current-buffer` 见 The Current Buffer
+* `save-excursion` 见 Excursions
+* `save-restriction` 见 Narrowing
+* `setq` 见 Setting Variable Values
+* `setq-default` 见 Creating and Deleting Buffer-local Bindings
+* `unwind-protect` 见 Nonlocal Exits
+* `while` 见 Oteratopm
+
+> Common Lisp注意事项:下面是GNU Emacs Lisp和公共Lisp中特殊形式的一些比较。setq、if和catch是Emacs Lisp和Common Lisp中的特殊形式。保存偏移是Emacs Lisp中的一种特殊形式，但在Common Lisp中不存在。throw在Common Lisp中是一种特殊的形式(因为它必须能够抛出多个值)，但它在Emacs Lisp中是一个函数(它没有多个值)。
+
+#### 10.2.8 Autoloading ####
+
+自动加载特性允许您调用尚未加载到Emacs中的函数定义的函数或宏。它指定哪个文件包含定义。当自动加载对象作为符号的函数定义出现时，将该符号作为函数调用将自动加载指定的文件;然后调用从该文件加载的实际定义。安排自动加载对象显示为符号的函数定义的方法见自动加载。 Autoload
+
+### 10.3 Quoting ###
+
+特殊形式quote返回它的单个参数，不计算它。这提供了一种在程序中包含常量符号和列表的方法，它们不是自求值的对象。(没有必要引用自求值对象，如数字、字符串和向量。)
+
+#### 特殊形式: `quote object` ####
+
+这种特殊的形式返回对象，而不求值。返回值可能是共享的，不应该被修改。参见自我评价表格。 
+
+因为quote在程序中经常使用，Lisp为它提供了一种方便的读语法。撇号字符 `'` 后跟Lisp对象(在read语法中)展开为一个列表，其第一个元素是quote，第二个元素是object。因此，read语法 `'x` 是 `(quote x)` 的缩写。
+
+下面是一些使用quote的例子:
+
+``` Elisp
+(quote (+ 1 2))
+     ⇒ (+ 1 2)
+
+(quote foo)
+     ⇒ foo
+
+'foo
+     ⇒ foo
+
+''foo
+     ⇒ 'foo
+
+'(quote foo)
+     ⇒ 'foo
+
+['foo]
+     ⇒ ['foo]
+```
+
+虽然表达式 `(list '+ 1 2)` 和 `'(+ 1 2)` 产生的列表都等于 `(+ 1 2)`，但前者产生的是一个新创建的可变列表，而后者产生的是一个由conses构建的列表，该列表可能是共享的，不应该被修改。参见自我评价表格。
+
+其他引用结构包括function(请参阅匿名函数)，它导致用Lisp编写的匿名lambda表达式被编译，以及反引号 (请参阅反引用Backquote)，它用于在计算和替换其他部分时仅引用列表的一部分。
+
+### 10.4 Backquote ###
+
+反引号结构允许您引用列表，但有选择地计算该列表中的元素。在最简单的情况下，它与特殊形式quote(在前一节中描述;见引用)。例如，这两种形式产生相同的结果:
+
+``` Elisp
+`(a list of (+ 2 3) elements)
+     ⇒ (a list of (+ 2 3) elements)
+
+'(a list of (+ 2 3) elements)
+     ⇒ (a list of (+ 2 3) elements)
+```
+
+参数内的特殊标记 `,` 表示该值不是常量。Emacs Lisp求值器对 `,` 的参数求值，并将值放入列表结构中:
+
+``` Elisp
+`(a list of ,(+ 2 3) elements)
+;  (a list of 5 elements)
+```
+
+在列表结构的更深层也允许使用 `,` 进行替换。例如:
+
+``` Elisp
+`(1 2 (3 ,(+ 4 5)))
+;  (1 2 (3 9))
+```
+
+您还可以使用特殊标记 `,@` 将计算值拼接到结果列表中。拼接列表的元素成为与结果列表的其他元素处于同一级别的元素。不使用 反引号 的等效代码通常是不可读的。下面是一些例子:
+
+``` Elisp
+(setq some-list '(2 3))
+;  (2 3)
+
+(cons 1 (append some-list '(4) some-list))
+;  (1 2 3 4 2 3)
+
+`(1 ,@some-list 4 ,@some-list)
+;  (1 2 3 4 2 3)
+
+(setq list '(hack foo bar))
+;  (hack foo bar)
+
+(cons 'use
+  (cons 'the
+    (cons 'words (append (cdr list) '(as elements)))))
+     ⇒ (use the words foo bar as elements)
+
+`(use the words ,@(cdr list) as elements)
+     ⇒ (use the words foo bar as elements)
+```
+
+如果反引号结构的子表达式没有替换或拼接，则它的作用类似于引号，因为它产生可以共享且不应修改的conse、vector和字符串。参见自我评价表格。
+
+### 10.5 Eval ###
+
+大多数情况下，由于forms出现在正在运行的程序中，因此会自动评估表单。在极少数情况下，您可能需要编写代码来计算在运行时计算的表单，例如在从正在编辑的文本中读取表单或从属性列表中获取表单之后。在这些情况下，使用eval函数。通常不需要eval，而应该使用其他方法。例如，要获取变量的值，在eval工作时，symbol-value更可取;或者与其将表达式存储在属性列表中，然后需要通过eval，不如存储函数，然后将其传递给funcall。
+
+本节中描述的函数和变量对forms进行求值，指定求值过程的限制，或记录最近返回的值。加载文件也会执行计算(参见加载 Loading)。
+
+将函数存储在数据结构中，并使用funcall或apply调用它，通常比将表达式存储在数据结构中并对其求值更简洁、更灵活。使用函数提供了将信息作为参数传递给它们的能力。
+
+#### 函数: `eval form &optional lexical` ####
+
+这是计算表达式的基本函数。它在当前环境中计算表单，并返回结果。表单对象的类型决定了它的计算方式。参见表单的种类。
+
+参数lexical指定局部变量的作用域规则(参见变量绑定的作用域规则 Scoping Rules for Variable Bindings)。如果省略或为nil，则意味着使用默认的动态范围规则计算表单。如果是t，那就意味着使用词法 lexical scoping rule 作用域规则。lexical的值也可以是一个非空列表，指定词法绑定的特定词法环境;但是，该特性仅对特定目的有用，例如在Emacs Lisp调试器中。参见词法绑定。Lexical Binding
+
+由于eval是一个函数，因此在调用eval时出现的参数表达式会被求值两次:一次作为调用eval之前的准备，另一次由eval函数本身求值。下面是一个例子:
+
+``` Elisp
+(setq foo 'bar)
+     ⇒ bar
+
+(setq bar 'baz)
+     ⇒ baz
+;; Here eval receives argument foo
+(eval 'foo)
+     ⇒ bar
+;; Here eval receives argument bar, which is the value of foo
+(eval foo)
+     ⇒ baz
+```
+
+当前对eval的活动调用的数量限制为 `max-lisp-eval-depth` (见下文)。
+
+#### 命令: `eval-region start end &optional stream read-function` ####
+
+这个函数计算当前缓冲区中由位置start和end定义的区域中的表单。它从区域读取表单并对其调用eval，直到到达区域的末尾，或者直到发出错误信号而未处理为止。
+
+默认情况下，`eval-region`不产生任何输出。但是，如果stream是非空值，则输出函数产生的任何输出(请参阅输出函数Output Functions)，以及对该区域中的表达式求值所产生的值都将使用stream打印。参见输出流Output Streams。
+
+如果`read-function`是非nil，它应该是一个函数，它被用来代替read逐个读取表达式。调用该函数时带一个参数，即读取输入的流。您也可以使用变量 `load-read-function` (请参阅程序如何加载 How Programs Do Loading)来指定此函数，但使用 `read-function` 参数更为健壮。
+
+`eval-region` 不移动 point, 它总是返回 nil
+
+#### 命令: `eval-buffer &optional buffer-or-name stream filename unibute print` ####
+
+这类似于 `eval-region`，但是参数提供了不同的可选特性。`eval-buffer`对缓冲区 `buffer-or-name` 的整个可访问部分进行操作(参见《GNU Emacs手册》中的“缩小Narrowing”)。`buffer-or-name`可以是缓冲区、缓冲区名称(字符串)或nil(或省略)，这意味着使用当前缓冲区。stream和eval-region一样使用，除非stream为nil并且输出非nil。在这种情况下，计算表达式得到的值仍然会被丢弃，但是输出函数的输出会被打印在回显区。filename是用于加载历史(请参阅卸载)的文件名，默认为 `buffer-file-name`(请参阅缓冲区文件名 Buffer File Name)。如果unibyte非nil，则read将字符串尽可能转换为单字节。
+
+#### 用户选项: `max-lisp-eval-depth` ####
+
+该变量定义了在发出错误信号之前调用eval、apply和funcall所允许的最大深度(错误消息为“Lisp嵌套超过max-lisp-eval-depth”)。
+
+这个限制，以及超过该限制时的相关错误，是Emacs Lisp避免对定义不清的函数进行无限递归的方式。如果将max-lisp-eval-depth的值增加得太多，这样的代码反而会导致堆栈溢出。在某些系统上，可以处理这种溢出。在这种情况下，正常的Lisp求值被中断，控制被转移回顶级命令循环(top-level)。注意，在这种情况下没有办法进入Emacs Lisp调试器。请参阅在出现错误时进入调试器Entering the Debugger on an Error。
+
+深度限制计算eval、apply和funcall的内部使用，例如调用Lisp表达式中提到的函数，递归计算函数调用参数和函数体形式，以及Lisp代码中的显式调用。
+
+这个变量的默认值是1600。如果将其设置为小于100的值，Lisp将在达到给定值时将其重置为100。进入Lisp调试器会增加该值(如果剩余空间很少)，以确保调试器本身有执行的空间。
+
+#### 变量: `values` ####
+
+这个变量的值是由标准Emacs命令从缓冲区(包括minibuffer)读取、求值和打印的所有表达式返回的值的列表。(注意，这并不包括在 `*ielm*` 缓冲区中的求值，也不包括在 `lisp-interaction-mode` 中使用C-j, C-x C-e和类似的求值命令的求值。)
+
+这个变量已经过时了，将在将来的版本中删除，因为它会不断地增加Emacs进程的内存占用。因此，我们建议不要使用它。
+
+values 的元素按最近的顺序排列。
+
+``` Elisp
+(setq x 1)
+;  1
+(list 'A (1+ 2) auto-save-default)
+;  (A 3 t)
+
+values
+;  nil
+```
+
+这个变量对于引用最近计算过的表单的值很有用。打印values本身的值通常不是一个好主意，因为它可能很长。相反，检查特定的元素，像这样:
+
+``` Elisp
+;; Refer to the most recent evaluation result.
+(nth 0 values)
+     ⇒ (A 3 t)
+
+;; That put a new element on,
+;;   so all elements move back one.
+(nth 1 values)
+     ⇒ (A 3 t)
+
+;; This gets the element that was next-to-most-recent
+;;   before this example.
+(nth 3 values)
+     ⇒ 1
+```
+
+### 10.6 Deferred and Lazy Evaluation ###
+
+有时，延迟delay 表达式的求值是有用的，例如，如果您想避免执行耗时的计算，如果结果在程序的未来中不需要。`thunk` 库提供了以下函数和宏来支持这种延迟求值:
+
+#### 宏: `thunk-delay forms...` ####
+
+返回一个值，用于对 forms 求值。thunk是一个闭包(参见闭包 Closures)，它继承了 `thunk-delay` 调用的词法环境。使用这个宏需要 `lexical-binding`。
+
+#### 函数: `thunk-force thunk` ####
+
+强制 思维thunk 执行在创造思维的 `thunk-delay` 中指定的形式的评估。返回最后一个表单的求值结果。thunk 也“记得”它已经被强迫了:任何用同样的 thunk 再次调用 `thunk-force` 只会返回同样的结果，而不会再次评估形式。
+
+#### 宏: `thunk-let (bindings...) forms...` ####
+
+这个宏类似于 let，但创建了“惰性lazy”变量绑定。任何绑定都有这样的形式 `(symbol value-form)`。与let不同的是，任何值形式的求值都被延迟，直到在求值形式时第一次使用相应符号的绑定。任何值形式最多求值一次。使用这个宏需要进行词汇绑定 lexical-binding。
+
+``` Elisp
+(defun f (number)
+  (thunk-let ((derived-number
+              (progn (message "Calculating 1 plus 2 times %d" number)
+                     (1+ (* 2 number)))))
+    (if (> number 10)
+        derived-number
+      number)))
+
+
+(f 5)
+⇒ 5
+
+
+(f 12)
+-| Calculating 1 plus 2 times 12
+⇒ 25
+
+```
+
+由于惰性绑定变量的特殊性质，设置它们是错误的(例如使用setq)。
+
+#### 宏: `thunk-let* (bindings...) forms...` ####
+
+这类似于 `thunk-let`，但是允许绑定中的任何表达式以这种 `thunk-let*` 形式引用前面的绑定。使用这个宏需要进行词汇绑定 lexical-binding。
+
+``` Elisp
+(thunk-let* ((x (prog2 (message "Calculating x...")
+                    (+ 1 1)
+                  (message "Finished calculating x")))
+             (y (prog2 (message "Calculating y...")
+                    (+ x 1)
+                  (message "Finished calculating y")))
+             (z (prog2 (message "Calculating z...")
+                    (+ y 1)
+                  (message "Finished calculating z")))
+             (a (prog2 (message "Calculating a...")
+                    (+ z 1)
+                  (message "Finished calculating a"))))
+  (* z x))
+
+-| Calculating z...
+-| Calculating y...
+-| Calculating x...
+-| Finished calculating x
+-| Finished calculating y
+-| Finished calculating z
+⇒ 8
+```
+
+`thunk-let` 和 `thunk-let*` 隐式地使用thunk:它们的扩展创建辅助符号并将它们绑定到包含绑定表达式的thunk上。然后用一个表达式替换对主体形式中原始变量的所有引用，该表达式使用相应的辅助变量作为参数调用thunk-force。因此，任何使用 `thunk-let` 或 `thunk-let*` 的代码都可以重写为使用thunk，但在许多情况下，使用这些宏产生的代码比显式使用thunk更好。
+
+## 11 Control Structures ##
 
 
 
