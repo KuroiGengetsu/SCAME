@@ -197,6 +197,21 @@
 ;  :init (todotxt-mode)
   :config (setq todotxt-file "D:/Coding/Todo/todo.txt"))
 
+;;;; pyim
+(use-package pyim
+  :ensure t
+  :config (pyim-basedict-enable)
+  (setq default-input-method "pyim"))
+
+(use-package pyim-basedict
+  :ensure t
+  :after (pyim))
+
+(use-package cnfonts
+  :ensure t
+  :config (cnfonts-mode t))
+;  (cnfonts-edit-profile)
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 命令类 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (fset 'yes-or-no-p 'y-or-n-p)
