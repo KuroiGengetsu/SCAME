@@ -8263,10 +8263,1069 @@ values
 
 ## 11 Control Structures ##
 
+[Control Structures](https://www.gnu.org/software/emacs/manual/html_node/elisp/Control-Structures.html)
+
+Lisp程序由一组表达式 *expressions* 或形式 *forms* 组成(参见形式的种类 Kinds of Forms)。我们通过将这些 forms 封装在控制结构中来控制它们的执行顺序。控制结构是控制何时、是否或执行多少次它们所包含的表单的特殊表单 special forms。
+
+最简单的执行顺序是顺序执行:首先是 form a，然后是 form b，依此类推。当您在函数体中或在Lisp代码文件的顶层连续编写多个 form 时，就会发生这种情况——表单将按照编写的顺序执行。我们称之为文本顺序 *textual order* 。例如，如果函数体由a和b两种形式组成，则函数的求值首先求a，然后求b。求b的结果成为函数的值。
+
+显式控制结构 *Explicit control structures* 使执行顺序而不是顺序成为可能。(Explicit control structures make possible an order of execution other than sequential. )
+
+Emacs Lisp提供了几种控制结构，包括其他种类的排序sequencing、条件conditionals、迭代interation和(受控controlled)跳转jumps——下面将讨论所有这些。内置控制结构是特殊的形式，因为它们的子形式不一定按顺序求值或不按顺序求值。您可以使用宏来定义自己的控制结构构造(请参阅宏 Macros)。
+
+
+* Sequencing
+* Conditionals
+* Constructs for Combining Conditions
+* Pattern-Matching Conditional
+* Iteration
+* Generators
+* Nonlocal Exits
+
+### 11.1 Sequencing ###
+
+按照表单出现的顺序计算表单是控制权从一个表单传递到另一个表单的最常见方式。在某些上下文中，例如在函数体中，这是自动发生的。在其他地方，您必须使用控制结构结构来实现这一点:编程 *progn*，Lisp中最简单的控制结构。
+
+一个 *progn* 的特殊形式是这样的:
+
+``` Elisp
+(progn a b c ...)
+```
+
+它说要按顺序执行form a b c，等等。这些形式称为程序体形式 *body of the progn form*。程序体中最后一个表单的值成为整个 progn 的值。
+
+`(progn)`返回nil。
+
+``` Elisp
+(eq (progn) nil)
+;  t
+```
+
+在Lisp的早期，progn 是连续执行两个或多个form并使用其中最后一个表单的值的唯一方法。但是程序员发现他们经常需要在函数体中使用程序，而(当时)只允许一种形式。因此，函数体被制成隐式程序(implicit progn):就像在实际程序体中一样，允许有几种形式。许多其他控制结构同样包含隐式程序。因此，程序的使用不像许多年前那么多了。现在最需要的是在一个 `unwind-protect`, and, or，或if的 then-part。
+
+#### 特殊形式: `progn forms...` ####
+
+这个特殊形式按文本顺序计算所有form，返回最终form的结果。
+
+``` Elisp
+(progn (print "The first form")
+       (print "The second form")
+	   (print "The third form"))
+;  "The third form"
+```
+
+另外两个结构同样对一系列形式求值，但返回不同的值:
+
+#### 特殊形式: `prog1 form1 forms...` ####
+
+这个特殊的表单按文本顺序计算 `form1` 和所有表单，返回form1的结果。
+
+``` Elisp
+(prog1 (print "The first form")
+       (print "The second form")
+	   (print "The third form"))
+;  "The first form"
+```
+
+下面是一种从变量x的列表中删除第一个元素的方法，然后返回前一个元素的值:
+
+``` Elisp
+(setq x '(a b c))
+;  (a b c)
+(prog1 (car x) (setq x (cdr x)))
+;  a
+x
+;  (b c)
+```
+
+#### 特殊形式: `prog2 form1 form2 forms...` ####
+
+这个特殊的表单按文本顺序计算form1、form2和以下所有表单，返回form2的结果。
+
+``` Elisp
+(prog2 (print "The first form")
+       (print "The second form")
+	   (print "The third form"))
+;  "The second form"
+```
+
+### 11.2 Conditionals ###
+
+[Conditionals](https://www.gnu.org/software/emacs/manual/html_node/elisp/Conditionals.html)
+
+条件控制结构在备选方案中进行选择。Emacs Lisp有五种条件形式:
+
+* `if`，这与其他语言非常相似;
+* `When`和`unless`是if的变体;
+* `cond`，这是一个概括的 case statement;
+* `pcase`，后者是cond的泛化(参见模式匹配条件 Pattern-Matching Conditional)。
+
+#### 特殊形式: `if condition then-form else-forms...` ####
+
+它根据条件的值在 `then-form` 和 `else-forms` 之间进行选择。如果计算条件非nil，则计算then-form并返回结果。否则，else-forms将按文本顺序求值，并返回最后一个的值。if的else部分是隐式 progn 的一个例子。参见排序 Sequencing)。
+
+如果condition的值为nil，并且没有给出else形式，则 if 返回nil。
+
+if 是一种特殊形式，因为没有选择的分支永远不会被求值——它将被忽略。因此，在这个例子中，true不会被输出，因为print从未被调用:
+
+``` Elisp
+(if nil
+    (print 'true)
+	'very-false)
+;  very-false
+```
+
+#### 宏: `when condition then-forms...` ####
+
+when 是if的变体，没有else-forms，可能有几个then-forms。特别是,
+
+``` Elisp
+(when condition a b c)
+```
+
+等同于
+
+``` Elisp
+(if condition (progn a b c) nil)
+```
+
+#### 宏: `unless condition forms...` ####
+
+unless 是if的变体，没有then-form:
+
+``` Elisp
+(unless condition a b c)
+```
+
+等同于
+
+``` Elisp
+(if condition nil
+    a b c)
+```
+
+#### 特殊形式: `cond clause...` ####
+
+cond 在任意数量的选项中进行选择。cond 中的每个 clause 必须是一个列表。这个列表的CAR是条件;剩下的元素，如果有的话，就是形体。因此，一个子句看起来像这样:
+
+``` Elisp
+(condition body-forms...)
+```
+
+cond 通过计算每个子句的条件，按文本顺序对子句进行测试。如果condition的值非nil，则子句成功;然后，cond计算其形体，并返回最后一个形体的值。其余的子句将被忽略。
+
+如果condition的值为nil，则子句失败，因此cond移动到下一个子句，尝试其条件。
+
+子句也可能是这样的:
+
+``` Elisp
+(condition)
+```
+
+然后，如果测试时condition为非nil，则cond返回condition的值。
+
+如果每个条件求值为nil，那么每个子句都失败，cond返回nil。
+
+下面的例子有四个子句，分别测试x的值为数字、字符串、缓冲区和符号的情况:
+
+``` Elisp
+(cond ((numberp x) x)
+      ((stringp x) x)
+	  ((bufferp x)
+	   (setq temporary-hack x) ; multiple body-forms
+	   (buffer-name x))        ; in one clause
+	  ((symbolp x) (symbol-value x)))
+```
+
+通常，当前面的子句都没有成功时，我们希望执行最后一个子句。为此，我们使用 t 作为最后一个子句的条件，如下所示: `(t body-forms)`。形式t的求值为t，它永远不会为nil，所以这个子句永远不会失败，只要cond到达它。例如:
+
+``` Elisp
+(setq a 5)
+(cond ((eq a 'hack) 'foo)
+      (t "default"))
+;  "default"
+```
+
+如果a的值为hack，则返回foo，否则返回字符串"default"。
+
+任何条件构式都可以用cond或if来表示。因此，在它们之间的选择是一个风格问题。例如:
+
+``` Elisp
+(if a b c)
+
+; 等同于
+
+(cond (a b) (t c))
+```
+
+结合使用条件绑定变量会很方便。通常情况下，你计算了一个值，然后想对这个值做一些事情，如果它不是nil。最直接的方法就是这样写，例如:
+
+``` Elisp
+(let ((result 1 (do-computation)))
+  (when result 1
+    (let ((result2 (do-more result1)))
+	  (when result2
+	    (do-something result2)))))
+```
+
+由于这是一种非常常见的模式，因此Emacs提供了许多宏来简化和提高可读性。上面的代码可以写成如下方式:
+
+``` Elisp
+(when-let ((result1 (do-computation))
+           (result2 (do-more result1)))
+  (do-something result2))
+```
+
+关于这个主题有很多变体，下面简要介绍一下。
+
+#### 宏: `if-let spec then-form else-forms...` ####
+
+在 spec 中依次计算每个绑定，就像在 `let*` 中一样(参见局部变量Local Variables)，如果绑定值为nil就停止。如果都是非nil，则返回then-form的值，否则返回else-forms中的最后一个形式。
+
+#### 宏: `when-let spec then-forms...` ####
+
+像 `if-let`，但没有 `else-forms`。
+
+#### 宏: `while-let spec then-forms...` ####
+
+就像when-let一样，但是要重复，直到spec中的绑定为nil。返回值总是nil。
+
+### 11.3Constructs for Combining Conditions ###
+
+[Constructs for Combining Conditions](https://www.gnu.org/software/emacs/manual/html_node/elisp/Combining-Conditions.html)
+
+本节描述经常与if和cond一起使用来表达复杂条件的结构。and和or结构也可以单独用作多种条件结构。
+
+#### 函数: `not condition` ####
+
+这个函数测试条件是否为假。如果condition为nil，则返回t，否则返回nil。函数not与null相同，如果您正在测试空列表，我们建议使用名称null。
+
+``` Elisp
+(not nil)
+;  t
+
+(not t)
+;  nil
+
+(null ())
+;  t
+```
+
+#### 特殊形式: `and conditions...` ####
+
+and 特殊形式测试是否所有条件都为真。它的工作原理是按照所写的顺序逐一计算条件。
+
+如果任何条件的计算结果为nil，则无论剩余条件如何，and的结果都必须为nil;因此，and 立即返回nil，忽略剩下的条件。
+
+如果所有条件都是非空的，那么最后一个条件的值就变成and形式的值。不带任何条件的 and 返回t，这很合适，因为所有的条件都是非nil。(想想看;哪一个没有?)
+
+这里有一个例子。第一个条件返回整数1，它不是nil。类似地，第二个条件返回整数2，它不是nil。第三个条件为nil，因此不计算剩余的条件。
+
+``` Elisp
+(and (print 1) (print 2) nil (print 3))
+;  nil
+```
+
+下面是一个使用and的更现实的例子:
+
+``` Elisp
+(setq foo '(x y z))
+;  (x y z)
+(consp foo)
+;  t
+(if (and (consp foo) (eq (car foo) 'x))
+    (message "foo is a list starting with x"))
+;  "foo is a list starting with x"
+
+(setq foo 'y)
+;  y
+(consp foo)
+;  nil
+;  t
+(if (and (consp foo) (eq (car foo) 'x))
+    (message "foo is a list starting with x"))
+;  nil
+```
+
+注意，如果 `(consp foo)` 返回nil，则不会执行(car foo)，从而避免出现错误。
+
+表达式也可以用if或cond来写。方法如下:
+
+``` Elisp
+(and arg1 arg2 arg3)
+
+(if arg1 (if arg2 arg3))
+
+(cond (arg1 (cond (arg2 arg3))))
+```
+
+#### 特殊形式: `or conditions...` ####
+
+or 特殊形式测试是否至少有一个条件为真。它的工作原理是按照所写的顺序逐一计算所有条件。
+
+如果任何条件的计算结果为非nil值，则or的结果必须为非nil;因此，or立即返回，忽略剩余的条件。它返回的值是刚刚求值的条件的非空值。
+
+如果所有条件都为nil，则or表达式返回nil。不带任何条件的 or 返回nil，这很合适，因为所有的条件都是nil。(想想看;哪一个没有?)
+
+例如，下面的表达式测试x是nil还是整数0:
+
+``` Elisp
+(setq x nil)
+;  nil
+(or (eq x nil) (eq x 0))
+;  t
+
+(setq x 0)
+;  0
+(or (eq x nil) (eq x 0))
+;  t
+
+(setq x 1)
+;  1
+(or (eq x nil) (eq x 0))
+;  nil
+```
+
+就像and结构一样，or 可以用cond来表示。例如:
+
+``` Elisp
+(or arg1 arg2 arg3)
+
+(cond (arg1)
+      (arg2)
+	  (arg3))
+```
+
+你几乎可以把or写成if的形式，但不完全是:
+
+``` Elisp
+(if arg1 arg1
+  (if arg2 arg2
+    arg3))
+```
+
+这不是完全等价的因为它可以计算arg1或arg2两次。相比之下，(或arg1 arg2 arg3)永远不会对任何参数求值超过一次。
+
+
+
+#### 函数: `xor condition1 condition2` ####
+
+这个函数返回条件1和条件2的布尔异或值 boolean exclusive-or。也就是说，如果两个参数都为nil，或者两个参数都非nil, xor返回nil。否则，它返回该参数的非nil值。
+
+注意，与or相反，两个参数总是被求值。
+
+``` Elisp
+(xor t nil)
+;  t
+
+(xor t t)
+;  nil
+
+(xor nil nil)
+;  nil
+
+(xor 1 0)
+;  nil
+
+(eq 0 nil)
+;  nil
+
+(eql 0 nil)
+;  nil
+
+(equal 0 nil)
+;  nil
+```
+
+### 11.4 Pattern-Matching Conditional ###
+
+#### 函数: `` ####
+
+除了四种基本条件形式之外，Emacs Lisp还有一种模式匹配条件形式 `pcase` 宏，它是`cond`和`cl-case`的混合(请参阅Common Lisp扩展中的条件 Conditionals in Common Lisp Extensions)，克服了它们的局限性，并引入了模式匹配编程风格 *pattern matching programming style*。`pcase`克服的限制是:
+
+* cond 通过计算它的每个子句的谓词条件(参见条件)在备选项中进行选择。主要的限制是，在条件中允许绑定的变量对子句的主体形式不可用。
+
+另一个烦恼(与其说是限制，不如说是不便)是，当一系列条件谓词实现相等性测试时，会有大量重复的代码。(cl-case解决了这个不便。)
+
+cl-case宏通过对一组特定值评估其第一个参数的相等性来在备选项中进行选择。
+
+它的局限性有两方面:
+
+1. 相等性测试使用eql。
+2. 这些值必须事先知道并写入。
+
+这些使得 `cl-case` 不适合字符串或复合数据结构(例如，列表或向量)。(cond没有这些限制，但它有其他限制，见上文。)
+
+从概念上讲，pcase宏借用了cl-case的第一个参数焦点(first-arg focus)和cond的子句处理流程，用模式匹配的一种变体——等式检验的泛化取代了condition，并添加了一些工具，以便您可以简洁地表达子句的谓词，并安排在子句的谓词和主体形式之间共享let绑定。
+
+谓词的简明表达式称为模式 pattern。当对第一个参数的值调用的谓词返回非nil时，我们说“模式匹配值”(或者有时“值匹配模式”)。
+
+
+* The pcase macro
+* Extending pcase
+* Backquote-Style Patterns
+* Destructuring with pcase Patterns
+
+#### 11.4.1 The pcase macro ####
+
+##### 宏: `pcase expression &rest clauses` #####
+
+从句中的每个子句的形式是: `(pattern body-forms...)`
+
+计算表达式以确定其值，`expval`。查找模式与`expval`匹配的子句中的第一个子句，并将控制权传递给该子句的主体形式。
+
+如果存在匹配，则pcase的值是成功子句中最后一个`body-forms`的值。否则，pcase的计算结果为nil。
+
+每个模式都必须是`pcase`模式，它可以使用下面定义的核心模式之一，也可以使用通过 `pcase-defmacro` 定义的模式之一(请参阅扩展pcase Extending pcase)。
+
+本小节的其余部分描述了核心模式 core pattern 的不同形式，给出了一些示例，并在使用某些模式形式提供的let绑定功能时给出了重要的注意事项。核心模式可以有以下形式:
+
+* `_` (underscore): 匹配任何exp。这也被称为不关心或通配符 wildcard。
+* `'val` 匹配如果expval等于val。比较就像通过equal来完成(参见相等谓词Equality Predicates)。
+* `keyword`, `integer`, `string`: 如果expval等于字面对象 liberal obejct，则匹配。这是上面val的一个特例，可能是因为这些类型的文字对象是自引用的。
+* `symbol` 匹配任何expval，并将 let-binds 符号附加到expval，以便此绑定可用于body-forms(参见动态绑定 Dynamic Binding)。如果symbol是序列模式`seqpat`的一部分(例如，下面使用and)，则该绑定也可用于seqpat中出现symbol之后的部分。这种用法有一些注意事项，请参阅注意事项 caveats。两个要避免的符号是t，它的行为类似于上面的 `_`，是不赞成使用的，而nil表示错误。同样，绑定关键字符号也没有意义(参见永远不变的变量 Variables that Never Change)。
+* 反引号qpat `` `qpat ``: 反引号样式的模式。有关详细信息，请参阅反引号样式模式 Backquote-Style Patterns。
+* `(cl-type type)`: 如果expval的类型为type，则匹配type, type是被cl-typep接受的类型描述符(参见公共Lisp扩展中的类型谓词Type Predicates in Common Lisp Extensions)。例子:
+
+``` Elisp
+(cl-type integer)
+(cl-type (integer 0 10))
+```
+
+(pred function) 如果谓词函数在以expval方式调用时返回非nil，则匹配。可以使用语法 `(pred (not function))`来否定测试。谓词函数可以有下列形式之一:
+
+* `function name (a symbol)`: 用一个参数expval调用命名函数。例如:integerp
+* `lambda expression`: 使用一个参数expval调用匿名函数(参见Lambda表达式)。示例: `(lambda (n) (= 42 n))`
+* `function call with n args`: 调用函数(函数调用的第一个元素)时带有n个参数(其他元素)和额外的第n+1个参数expval。示例: `(= 42)` 在本例中，函数为`=`，n为1，实际的函数调用变为:(= 42 expval)。
+* `(app function pattern)`: 在expval上调用的if函数返回匹配pattern的值。函数可以采用上面为pred描述的一种形式。然而，与pred不同的是，app根据模式测试结果，而不是根据布尔真值。
+* `(guard boolean-expression)`: 如果布尔表达式的计算结果为非nil，则匹配。
+* `(let pattern expr)`: 计算expr以获得expr，并在expr与模式匹配时进行匹配。(之所以叫let，是因为pattern可以使用symbol将符号绑定到值。)
+
+排序模式 sequencing pattern(也称为seqpat)是一种按顺序处理子模式参数的模式。有两个for case: `and`和`or`。它们的行为方式与共享其名称的特殊形式类似(请参阅组合条件的构造 Constructs for Combining Conditions)，但它们处理的不是值，而是子模式。
+
+* `and pattern1...`: 尝试匹配模式1…，按顺序，直到其中一个无法匹配。在这种情况下，和同样无法匹配，并且其余的子模式不进行测试。如果所有子模式匹配，则匹配。
+* `or pattern1 pattern2...`: 尝试按顺序匹配 `pattern1, pattern2，...`，直到其中一个成功。在这种情况下，或同样匹配，并且不测试其余的子模式。为了向形体呈现一致的环境(参见求值介绍 Introduction to Evaluation)(从而避免匹配时的求值错误)，模式绑定的变量集是每个子模式绑定的变量的并集。如果一个变量没有被匹配的子模式绑定，那么它被绑定为nil。
+* `(rx rx-expr...)`: 使用rx regexp表示法(参见rx结构化regexp表示法 The rx Structured Regexp Notation)，就像通过字符串匹配一样，根据regexp rx-expr…匹配字符串。
+
+除了常用的rx语法外，`rx-expr...`还可以包含以下结构:
+
+* `(let ref rx-expr...)`: 将符号ref绑定到匹配 `rx-expr...` 的子匹配Ref以body形式绑定到submatch的字符串或nil，但也可以在backref中使用。
+* `(backref ref)`: 就像标准的 backref 结构一样，但是ref在这里也可以是由前一个 `(let ref...)`结构引入的名称。
+
+##### 例子 Advantage Over cl-case #####
+
+这里有一个例子，突出了pcase相对于cl-case的一些优势(参见Common Lisp扩展中的条件 Conditionals in Common Lisp Extensions)。
+
+``` Elisp
+(pcase (get-return-code x)
+  ;; string
+  ((and (pred stringp) msg)
+   (message "%s" msg))
+
+  ;; symbol
+  ('success       (message "Done!"))
+  ('would-block   (message "Sorry, can't do it now"))
+  ('read-only     (message "The schmiliblick is read-only"))
+  ('access-denied (message "You do not have the needed rights"))
+
+  ;; default
+  (code           (message "Unknown return code %s" code)))
+```
+
+使用cl-case，您需要显式声明一个局部变量code来保存get-return-code的返回值。另外，cl-case很难用于字符串，因为它使用eql进行比较。
+
+##### 例子: Using and #####
+
+常见的习惯用法idiom是编写以and开头的模式，并使用一个或多个符号子模式为后面的子模式(以及主体形式)提供绑定。例如，下面的模式匹配单位数整数。
+
+``` Elisp
+(and
+  (pred integerp)
+  n                      ; bind n to expval
+  (guard (<= -9 n 9)))
+```
+
+首先，pred匹配if `(integerp expval)` 的求值为非nil。接下来，n是一个符号模式，它匹配任何东西并将n绑定到expval。最后，如果布尔表达式 `(<= -9 n 9)` (注意对n的引用)的计算结果为非nil，则guard匹配。如果所有这些子模式都匹配，则匹配。
+
+##### 例子： Reformulation with pcase #####
+
+下面是另一个示例，展示了如何将一个简单的匹配任务从其传统实现 `(function grok/traditional)` 重新定义为使用pcase `(function grok/pcase)` 的匹配任务。如果OBJ是 `"key:NUMBER"` 形式的字符串，则返回字符串 `NUMBER`。否则，返回列表 `("149" default)`。首先，传统的实现(参见正则表达式 Regular Expressions):
+
+``` Elisp
+(defun grok/traditional (obj)
+  (if (and (stringp obj)
+           (string-match "^key:\\([[:digit:]]+\\)$" obj))
+	  (match-string 1 obj)
+    (list "149" 'default)))
+
+(grok/traditional "key:0")
+;  "0"
+(grok/traditional "key:149")
+;  "149"
+(grok/traditional "monolith")
+;  ("149" default)
+```
+
+这个重新表述演示了符号绑定以及or、and、pred、app和let。
+
+``` Elisp
+(defun grok/pcase (obj)
+  (pcase obj
+    ((or
+	  (and
+	    (pred stringp)
+		(pred (string-match
+		      "^key:\\([[:digit:]]+\\)$"))
+	    (app (match-string 1)
+		     val))
+	  (let val (list "149 'default")))
+	 val)))
+
+(grok/pcase "key:0")
+;  "0"
+(grok/pcase "key:149")
+;  "149"
+(grok/pcase "monolith")
+;  ("149 'default")
+```
+
+`grok/pcase` 的大部分是pcase形式的单个子句，即第1-8行中的模式，第9行中的(单个)主体形式。模式是or，它依次尝试匹配其参数子模式，首先是and(第2-7行)，然后是let(第8行)，直到其中一个成功。
+
+与前面的示例一样(参见示例1)，并以pred子模式开始，以确保以下子模式使用正确类型的对象(在本例中为字符串)。如果 `(stringp expval)`返回nil, pred失败，因此and也失败。
+
+下一个pred(第4-5行)计算 `(string-match RX expval)`并在结果非nil时进行匹配，这意味着expval具有所需的形式: `key:NUMBER`。再一次，失败了，pred也失败了。
+
+最后(在这个系列和子模式中)，app计算(match-string 1 expval)(第6行)以获得临时值tmp(即“NUMBER”子字符串)并尝试将tmp与模式val(第7行)相匹配。因为这是一个符号模式，它无条件匹配并额外将val绑定到tmp。
+
+现在 app 匹配了，所有 and 子模式都匹配了，所以 and 匹配了。同样，一旦and匹配，or 匹配而不继续尝试子模式let(第8行)。
+
+让我们考虑这样一种情况:obj不是字符串，或者它是字符串但形式错误。在这种情况下，其中一个pred(第3-5行)无法匹配，因此and(第2行)无法匹配，因此or(第1行)继续尝试子模式let(第8行)。
+
+首先，let求值 `(list "149" 'default)` 以获取 `("149" default)`，然后尝试将expreval与模式val进行匹配。由于这是一个符号模式，因此它会无条件匹配并将val额外绑定到expreval。现在let已经匹配了，或者匹配了。
+
+注意and和如何让子模式以相同的方式结束:在进程绑定val中尝试(总是成功地)匹配符号模式val。因此，or总是匹配并且控制总是传递给体形式(第9行)。因为这是成功匹配的pcase子句中的最后一个体形式，它是pcase的值，同样也是grok/pcase的返回值(参见什么是函数? What Is a Function?)。
+
+##### Caveats for symbol in Sequencing Patterns 序列模式中符号的注意事项 #####
+
+前面的示例都使用排序模式 sequencing patterns，其中以某种方式包含符号子模式。这里有一些关于这种用法的重要细节。
+
+1. 当symbol在seqpat中出现不止一次时，第二次和随后的出现不会展开为重新绑定，而是展开为使用eq进行相等性测试。
+
+下面的例子是一个带有两个子句和两个seqpat的pcase形式，A和B。A和B首先检查expval是一对(使用pred)，然后将符号绑定到expval的car和cdr(分别使用一个 app)。
+
+对于A，因为符号 st 被提及两次，第二次提及使用eq成为一个相等性测试。另一方面，B使用两个单独的符号s1和s2，它们都成为独立的绑定。
+
+``` Elisp
+(defun grok (object)
+  (pcase object
+    ((and (pred consp)        ; seqpat A
+	      (app car st)        ; first mention: st
+		  (app cdr st))       ; second mention: st
+	 (list 'eq st))
+	 
+	((and (pred consp)        ; seqpat B
+	      (app car s1)        ; first mention: s1
+		  (app cdr s2))       ; first mention: s2
+	 (list 'not-eq s1 s2))))
+```
+
+2. 副作用代码引用符号未定义。避免的。例如，下面是两个类似的函数。都使用and, symbol和guard:
+
+``` Elisp
+(defun square-double-digit-p/CLEAN (integer)
+  (pcase (* integer integer)
+    ((and n (guard (< 9 n 100))) (list 'yes n))
+	(sorry (list 'no sorry))))
+
+(square-double-digit-p/CLEAN 9)
+;  (yes 81)
+(square-double-digit-p/CLEAN 3)
+;  (no 9)
+(square-double-digit-p/CLEAN 4)
+;  (yes 16)
+(square-double-digit-p/CLEAN 10)
+;  (no 100)
+
+
+(defun square-double-digit-p/MAYBE (integer)
+  (pcase (* integer integer)
+    ((and n (guard (< 9 (cl-incf n) 100))) (list 'yes n))
+	(sorry (list 'no sorry))))
+
+(square-double-digit-p/MAYBE 9)
+;  (yes 81)
+(square-double-digit-p/MAYBE 3)
+;  (yes 9)  ; WRONG!
+;; void function incf, you need to use cl-incf
+```
+
+区别在于guard中的布尔表达式:CLEAN简单而直接地引用n，而MAYBE在表达式`(incf n)`中引用n时会产生副作用。当integer为3时，会发生以下情况:
+
+* 第一个n将它绑定到expval，即计算 `(* 3 3)`或9的结果。
+* 布尔表达式求值:
+
+``` PlainText
+start:   (< 9 (incf n)        100)
+becomes: (< 9 (setq n (1+ n)) 100)
+becomes: (< 9 (setq n (1+ 9)) 100)
+
+becomes: (< 9 (setq n 10)     100)
+                                   ; side-effect here!
+becomes: (< 9       n         100) ; n now bound to 10
+becomes: (< 9      10         100)
+becomes: t
+```
+
+因为求值的结果是非空的，所以guard匹配, and 匹配，并且控制传递给该子句的主体形式。
+
+除了断言9是一个两位数整数的数学错误之外，MAYBE还有另一个问题。体形式再次引用n，但我们根本看不到更新后的值10。它怎么了?
+
+总而言之，最好完全避免对符号模式的副作用引用，不仅在布尔表达式(在guard中)中，而且在expr(在let中)和函数(在pred和app中)中也是如此。
+
+3. 匹配时，子句的主体形式可以引用模式允许绑定的符号集。当seqpat为and时，该集合是它的每个子模式的所有符号的并集。这是有意义的，因为要匹配，所有子模式必须匹配。
+
+当seqpat为or时，情况就不同了:or匹配匹配的第一个子模式;其余的子模式将被忽略。让每个子模式绑定一组不同的符号是没有意义的，因为主体形式没有办法区分哪个子模式匹配，并在不同的集合中进行选择。例如:
+
+``` Elisp
+(require 'cl-lib)
+(pcase (read-number "Enter an integer: ")
+  ((or (and (pred cl-evenp)
+            e-num)
+	   o-num)
+   (list e-num o-num)))
+
+Enter an integer: 42
+error→ Symbol’s value as variable is void: o-num
+
+Enter an integer: 149
+error→ Symbol’s value as variable is void: e-num
+```
+
+计算 body 形式 `(list e-num o-num)`表示错误。为了区分子模式，您可以使用另一个符号，在所有子模式中名称相同，但值不同。修改上面的例子:
+
+``` Elisp
+(require 'cl-lib)
+(pcase (read-number "Enter an integer: ")
+  ((and num                                ; line 1
+        (or (and (pred cl-evenp)           ; line 2
+                 (let spin 'even))         ; line 3
+            (let spin 'odd)))              ; line 4
+   (list spin num)))                       ; line 5
+
+
+Enter an integer: 42
+⇒ (even 42)
+
+Enter an integer: 149
+⇒ (odd 149)
+```
+
+第1行 “factors out” 与and和符号(在本例中为num)的指数绑定。在第2行，或以与之前相同的方式开始，但不是绑定不同的符号，而是使用两次let(第3-4行)在两个子模式中绑定相同的符号旋转。spin的值区分子模式。主体形式引用这两个符号(第5行)。
+
+#### 11.4.2 Extending pcase ####
+
+[Extending pcase](https://www.gnu.org/software/emacs/manual/html_node/elisp/Extending-pcase.html)
+
+pcase宏支持几种模式(参见模式匹配条件)。您可以使用pcase-defmacro宏添加对其他类型模式的支持。
+
+##### 宏: `pcase-defmacro name args [doc] &rest body` #####
+
+为pcase定义一种新的模式，以 `(name actual-args)` 的形式调用。pcase宏将其扩展为一个对body求值的函数调用，其工作是在args绑定到实际args的环境中，将调用的模式重写为其他模式。
+
+此外，安排将doc与pcase的文档字符串一起显示。按照惯例，doc应该使用EXPVAL来表示计算表达式的结果(第一个参数到pcase)。
+
+通常，body会重写被调用的模式以使用更基本的模式。虽然所有的模式最终都减少到核心模式，但身体不需要立即使用核心模式。下面的示例定义了两个模式，分别命名为less-than和integer-less-than。
+
+``` Elisp
+(pcase-defmacro less-than (n)
+  "Matches if EXPVAL is a number less than N."
+  `(pred (> ,n)))
+
+(pcase-defmacro integer-less-than (n)
+  "Matches if EXPVAL is an integer less than N."
+  `(and (pred integerp)
+        (less-than ,n)))
+```
+
+请注意，文档字符串以通常的方式提到了参数(在本例中，只有一个:n)，并且还按照约定提到了EXPVAL。第一次重写(即，body for less-than)使用一个核心模式:pred。第二个使用两个核心模式:and和pred，以及新定义的less-than模式。两者都使用单个反引号结构(参见反引号 Backquote)。
+
+#### 11.4.3 Backquote-Style Patterns ####
+
+> 本小节的内容看不懂, 以后回来看
+
+本小节描述反向引用样式模式，这是一组简化结构匹配的内置模式。有关背景信息，请参见模式匹配条件。
+
+反引号样式的模式是一组功能强大的pcase模式扩展(使用pcase-defmacro创建)，可以很容易地将expval与其结构规范相匹配。
+
+例如，要匹配expval，它必须是一个包含两个元素的列表，其中第一个元素是特定的字符串，第二个元素是任何值，你可以编写一个核心模式:
+
+``` Elisp
+(and (pred listp)
+     ls
+
+     (guard (= 2 (length ls)))
+     (guard (string= "first" (car ls)))
+     (let second-elem (cadr ls)))
+```
+
+或者你可以写一个等价的反引号样式的模式:
+
+``` Elisp
+`("first" ,second-elem)
+```
+
+反引号样式的模式更简洁，类似于expval的结构，并且避免了绑定。
+
+反引号样式的模式有 `` `qpat `` 的形式，其中qpat可以有以下形式:
+
+* `(qpat1 . qpat2)`: 如果expval是一个car匹配qpat1且cdr匹配qpat2的cons单元格，则匹配。这很容易推广到 `(qpat1 qpat2...)`中的列表。
+* `[qpat1 qpat2 ... qpatm]`: 如果expval是长度为m的向量，其0..(m-1)个元素分别匹配qpat1, qpat2 .. qpatm，则匹配。
+* `symbol`, `keyword`, `number`, `string` 如果expval的对应元素等于指定的文字对象，则匹配。
+* `,pattern`: 如果expval的对应元素匹配pattern，则匹配。请注意，模式是pcase支持的任何类型。(在上面的例子中，second-elem是一个符号核心模式;因此，它匹配任何东西，并将第二元素let绑定。)
+
+对应的元素是expval中与qpat在反引号样式模式中的结构位置相同的部分。(在上面的例子中，second-elem的对应元素是expval的第二个元素。)
+
+下面是一个使用pcase实现小表达式语言的简单解释器的示例(注意，这需要在fn子句中对lambda表达式进行词法绑定，以正确捕获body和arg(参见词法绑定 Lexical Binding):
+
+``` Elisp
+(defun evaluate (form env)
+  (pcase form
+    (`(add ,x ,y)       (+ (evaluate x env)
+                           (evaluate y env)))
+
+    (`(call ,fun ,arg)  (funcall (evaluate fun env)
+                                 (evaluate arg env)))
+    (`(fn ,arg ,body)   (lambda (val)
+                          (evaluate body (cons (cons arg val)
+                                               env))))
+
+    ((pred numberp)     form)
+    ((pred symbolp)     (cdr (assq form env)))
+    (_                  (error "Syntax error: %S" form))))
+
+```
+
+前三个子句使用反引号样式的模式。`` `(add ,x ,y) `` 是一个模式，它检查表单是否是一个以文字符号add开头的三元素列表，然后提取第二个和第三个元素，并分别将它们绑定到符号x和y。这就是所谓的解构，请参阅使用pcase模式进行解构。子句体计算x和y并添加结果。类似地，call子句实现函数调用，fn子句实现匿名函数定义。
+
+其余子句使用核心模式。如果表单是数字，则(pred numberp)匹配。匹配时，身体会进行评估。如果形式是一个符号，则(pred symbolp)匹配。匹配时，程序体在env中查找符号并返回它的关联。最后，_是一个可以匹配任何内容的通用模式，因此它适合报告语法错误。
+
+下面是一些用这种小语言编写的示例程序，包括它们的计算结果:
+
+``` Elisp
+(evaluate '(add 1 2) nil)                 ⇒ 3
+(evaluate '(add x y) '((x . 1) (y . 2)))  ⇒ 3
+(evaluate '(call (fn x (add 1 x)) 2) nil) ⇒ 3
+(evaluate '(sub 1 2) nil)
+```
+
+#### 11.4.4 Destructuring with pcase Patterns ####
+
+
+Pcase模式不仅表达了它们可以匹配的对象的形式的条件，而且还可以提取这些对象的子字段。例如，我们可以从一个列表中提取2个元素，这个列表是变量my-list的值，代码如下:
+
+``` Elisp
+(setq my-list '(add 1 2))
+(pcase my-list
+  (`(add ,x ,y) (message "Contains %S and %S" x y)))
+;  "Contains 1 and 2"
+```
+
+这不仅会提取x和y，还会额外测试my-list是否恰好包含3个元素，并且其第一个元素是符号add。如果这些测试中的任何一个失败，pcase将立即返回nil而不调用message。
+
+提取存储在对象中的多个值称为解构。使用pcase模式允许执行解构绑定，这类似于局部绑定(请参阅局部变量 Local Variables)，但通过从兼容结构的对象中提取这些值来为变量的多个元素提供值。
+
+本节中描述的宏使用pcase模式来执行解构绑定。对象具有兼容结构的条件意味着对象必须匹配模式，因为只有这样才能提取对象的子字段。例如:
+
+``` Elisp
+(pcase-let ((`(add ,x ,y) my-list))
+  (message "Contains %S and %S" x y))
+```
+
+执行与前面的示例相同的操作，只是它直接尝试从my-list中提取x和y，而不首先验证my-list是否是一个具有正确数量的元素并将add作为其第一个元素的列表。当对象实际上与模式不匹配时，精确的行为是未定义的，尽管主体不会被静默地跳过:要么发出错误信号，要么运行主体，其中一些变量可能绑定到任意值(如nil)。
+
+对于解构绑定有用的pcase模式通常是在反向引用样式模式中描述的那些模式，因为它们表达了将匹配的对象结构的规范。
+
+有关解构绑定的另一种工具，请参见seq-let。
+
+##### 宏: `pcase-let bindings body...` #####
+
+根据绑定对变量进行解构绑定，然后求值。
+
+Bindings是格式为 `(pattern exp)` 的绑定列表，其中exp是要求值的表达式，pattern是pcase模式。
+
+所有exp首先求值，然后根据它们各自的模式进行匹配，引入新的变量绑定，然后在主体内部使用。变量绑定是通过解构模式元素到被求值的exp对应元素值的绑定来产生的。
+
+这里有一个简单的例子:
+
+``` Elisp
+(pcase-let ((`(,major ,minor)
+             (split-string "image/png" "/")))
+  minor)
+;  "png"
+```
+
+##### 宏: `pcase-let* bindings body...` #####
+
+根据绑定对变量进行解构绑定，然后求值。
+
+Bindings是格式为 `(pattern exp)` 的绑定列表，其中exp是要求值的表达式，pattern是pcase模式。变量绑定是通过解构模式元素到被求值的exp对应元素值的绑定来产生的。
+
+与pcase-let不同，但与 `let*` 相似，在处理绑定的下一个元素之前，每个exp都针对其相应的模式进行匹配，因此在每个绑定中引入的变量绑定除了在主体中可用外，还可以在后面绑定的exp中可用。
+
+##### 宏: `pcase-dolist (pattern list) body...` #####
+
+对list的每个元素执行一次body，在每次迭代中执行模式变量到list元素对应子字段值的解构绑定。绑定就像通过pcase-let执行一样。当pattern是一个简单变量时，它最终等同于dolist(参见迭代 Iteration)。
+
+##### 宏: `pcase-setq pattern value...` #####
+
+以setq形式给变量赋值，并根据其各自的模式解构每个值。
+
+##### 宏: `pcase-lambda lambda-list &rest body` #####
+
+这类似于lambda，但允许每个参数都是一个模式。例如，下面是一个简单的函数，它接受一个cons单元格作为参数:
+
+``` Elisp
+(setq fun
+      (pcase-lambda (`(,key . ,val))
+	    (vector key (* val 10))))
+(funcall fun '(foo . 2))
+;  [foo 20]
+```
+
+### 11.5 Iteration ###
+
+迭代意味着重复执行程序的某些部分。例如，你可能想要对列表中的每个元素重复一次计算，或者对从0到n的每个整数重复一次计算。你可以在Emacs Lisp中使用特殊形式while来完成:
+
+#### 特殊形式: `while condition forms...` ####
+
+While首先计算条件。如果结果非nil，则按文本顺序计算表单。然后重新求值condition，如果结果非nil，则再次求值forms。这个过程一直重复，直到condition的计算结果为nil。
+
+对可能发生的迭代次数没有限制。循环将继续，直到其中一个条件的计算结果为nil，或者直到跳出错误或抛出(请参阅非局部退出 Nonlocal Exits)。
+
+while形式的值总是nil。
+
+``` Elisp
+(setq num 0)
+;  0
+
+(while (< num 4)
+  (princ (format "Iteration %d." num))
+  (setq num (1+ num)))
+; nil
+```
+
+要编写一个repeat-until循环，它将在每次迭代中执行一些操作，然后执行end-test，将end-test后跟的循环体放在程序中作为while的第一个参数，如下所示:
+
+``` Elisp
+(while (progn
+         (forward-line 1)
+		 (not (looking-at "^$"))))
+```
+	
+它向前移动一行，并继续逐行移动，直到到达空行。它的特殊之处在于，while没有主体，只有end test(它也做移动点的实际工作)。
+
+dolist和dotimes宏为编写两种常见的循环提供了方便的方法。
+
+#### 宏: `dolist (var list [result]) body...` ####
+
+该构造对list的每个元素执行一次body，在本地绑定变量var以保存当前元素。然后返回计算结果的值，如果省略result则返回nil。例如，以下是如何使用dolist来定义 reverse 函数:
+
+``` Elisp
+(defun reverse (list)
+  (let (value)
+    (dolist (elt list value)
+	  (setq value (cons elt value)))))
+```
+
+#### 宏: `dotimes (varf count [result]) body...` ####
+
+该构造对从0(含)到count(不含)的每个整数执行一次body，将变量var绑定到当前迭代的整数。然后返回计算结果的值，如果省略result则返回nil。不赞成使用result。下面是一个使用dotimes将某事做100次的例子:
+
+``` Elisp
+(dotimes (i 100)
+  (insert "I will not obey absurd orders\n"))
+```
+
+### 11.6 Generators ###
+
+生成器是一个函数，它产生一个可能无限的值流。每次函数产生一个值时，它都会挂起自己并等待调用者请求下一个值。
+
+#### 宏: `iter-defun name args [doc] [declare] [interactive] body...` ####
+
+`iter-defun` 定义了一个生成器函数。生成器函数与普通函数具有相同的签名，但工作方式不同。生成器函数在调用时不执行body，而是返回一个迭代器对象。该迭代器运行body生成值，发出一个值，并在 `iter-yield` 或 `iter-yield-from` 出现时暂停。当body正常返回时，`iter-next` 用body的结果作为条件数据通知 `iter-end-of-sequence`。
+
+任何类型的Lisp代码在代码体内部都是有效的，但是 `iter-yield` 和 `iter-yield-from` 不能出现在 `unwind-protect` 形式中。
+
+#### 宏: `iter-lambda args [doc] [interactive] body...` ####
+
+`iter-lambda` 生成一个未命名的生成器函数，其工作方式与使用iter-defun生成的生成器函数类似。
+
+#### 宏: `iter-yield value` ####
+
+当它出现在生成器函数中时，`iter-yield` 表示当前迭代器应该暂停并从 `iter-next` 返回值。`iter-yield` 计算为下一次调用 `iter-next` 的value参数。
+
+#### 宏: `iter-yield-from iterator` ####
+
+`iter-yield-from` 返回迭代器产生的所有值，并计算为迭代器生成器函数正常返回的值。当它拥有控制权时，迭代器使用 `iter-next`接收发送给迭代器的值。
+
+要使用生成器函数，首先按常规调用它，生成一个迭代器对象。迭代器是生成器的特定实例。然后使用 `iter-next` 从这个迭代器中检索值。当没有更多的值可以从迭代器中提取时，iter-next用迭代器的最终值引发一个 `iter-end-of-sequence` 条件。
+
+需要注意的是，生成器函数体只执行对 `iter-next` 的内部调用。调用用 `iterter-defun`定义的函数会产生一个迭代器;您必须使用 `iter-next` 来驱动这个迭代器，以便发生任何有趣的事情。每次调用生成器函数都会产生一个不同的迭代器，每个迭代器都有自己的状态。
+
+#### 函数: `iter-next iterator &optional value` ####
+
+从迭代器中检索下一个值。如果没有更多的值要生成(因为迭代器的生成器函数返回)，`iter-next` 表示 `iter-end-of-sequence`;与此条件关联的数据值是迭代器生成器函数返回的值。
+
+Value被发送到迭代器中，并成为迭代yield计算的值。Value在对给定迭代器的第一次 `iter-next` 调用时被忽略，因为在迭代器的生成器函数开始时，生成器函数没有计算任何 `iter-yield` 形式。
+
+#### 函数: `iter-close iterator` ####
+
+如果迭代器挂起在unwind保护的主体中，并且变得不可访问，Emacs将在垃圾收集通过后最终运行unwind处理程序。(注意，在unwind_protect的unwindform中，iter-yield是非法的。)要确保在此之前运行这些处理程序，请使用iter-close。
+
+提供了一些方便的函数使使用迭代器更容易:
+
+#### 宏: `iter-do (var iterator) body...` ####
+
+运行 body，var绑定到迭代器产生的每个值。
+
+Common Lisp循环功能还包含使用迭代器的特性。参见公共Lisp扩展中的循环功能。Loop Facility
+
+下面这段代码演示了使用迭代器的一些重要原则。
+
+``` Elisp
+(require 'generator)
+(iter-defun my-iter (x)
+  (iter-yield (1+ (iter-yield (1+ x))))
+  ;; Return normally
+  -1)
+
+(let* ((iter (my-iter 5))
+       (iter2 (my-iter 0)))
+  ;; Print 6
+  (print (iter-next iter))
+  ;; Print 9
+  (print (iter-next iter 8))
+  ;; Prints 1; iter and iter2 have distinct states
+  (print (iter-next iter2 nil))
+
+  ;; We expect the iter sequence to end now
+  (condition-case x
+    (iter-next iter)
+	(iter-end-of-sequence
+	  ;; Prints -1, which my-iter returned normally
+	  (print (cdr x)))))
+```
+
+### 11.7 Nonlocal Exits ###
+
+*nonlocal exit* 是将控制从程序中的一个点转移到另一个远程点。在Emacs Lisp中，错误可能导致非本地退出;您也可以在显式控制下使用它们。非局部退出取消由退出的构造所做的所有变量绑定。
+
+
+* Explicit Nonlocal Exits: catch and throw
+* Examples of catch and throw
+* Errors
+* Cleaning Up from Nonlocal Exits
+
+#### 11.7.1 Explicit Nonlocal Exits: catch and throw ####
+
+[Explicit Nonlocal Exits: catch and throw](https://www.gnu.org/software/emacs/manual/html_node/elisp/Catch-and-Throw.html)
+
+大多数控制构造只影响构造本身内的控制流。函数throw是正常程序执行规则的例外:它在请求时执行非本地退出。(还有其他异常，但它们仅用于错误处理。)throw在catch中使用，并跳转回该catch。例如:
+
+``` Elisp
+(defun foo-outer ()
+  (catch 'foo
+    (foo-inner)))
+
+(defun foo-inner ()
+  ...
+  (if x
+      (throw 'foo t))
+  ...)
+```
+
+throw form，如果执行，将控制直接转移回相应的catch，后者立即返回。不执行抛出后的代码。throw的第二个参数用作catch的返回值。
+
+throw函数根据第一个参数查找匹配的catch:它搜索第一个参数为与throw中指定的参数相等的catch。如果有多个适用catch，则最内层的catch优先。因此，在上面的例子中，throw指定了foo, foo-outer中的catch指定了相同的符号，因此catch是适用的(假设两者之间没有其他匹配的catch)。
+
+执行throw退出匹配catch之前的所有Lisp构造，包括函数调用。当绑定构造(如let或函数调用)以这种方式退出时，绑定将被解除绑定，就像这些构造正常退出时一样(参见局部变量 Local Variables)。同样地，throw恢复由 `save-excursion` 保存的缓冲区和位置(参见Excursions)，以及由 `save-restriction`保存的缩小状态。当退出 `unwind-protect` 特殊形式时，它还运行使用该表单建立的任何清理(参见从非本地出口进行清理 Cleaning Up from Nonlocal Exits)。
+
+throw在词法上不需要出现在它跳转到的catch中。它同样可以从catch中调用的另一个函数中调用。只要throw按时间顺序发生在进入catch之后，并在退出catch之前，它就可以访问该catch。这就是为什么可以在 `exit-recursive-edit` 等命令中使用throw，这些命令会将throw扔回编辑器命令循环(参见递归编辑 Recursive Editing)。
+
+> 注意:大多数其他版本的Lisp，包括Common Lisp，都有几种非顺序转移控制的方法:例如，return、return-from 和 go。Emacs Lisp只有throw。cl-lib库提供了其中一些版本。参见公共Lisp扩展中的块和出口 Blocks and Exits。
+
+##### 特殊形式: `catch tag body...` #####
+
+catch为抛出函数建立一个返回点。返回点通过标签与其他返回点区分开来，标签可以是除nil以外的任何Lisp对象。参数标签通常在返回点建立之前求值。
+
+返回点生效后，catch按文本顺序计算语句体的形式。如果 body 正常执行(没有错误或非局部退出)，则从catch返回最后一个 body 的值。
+
+如果在body执行期间执行throw，并指定相同的value标签，则catch形式立即退出;它返回的值是作为throw的第二个参数指定的任何值。
+
+##### 函数: `throw tag value` #####
+
+throw的目的是从先前用catch建立的返回点返回。参数标签用于在各种现有返回点之间进行选择;它必须等于catch中指定的值。如果多个返回点匹配标签，则使用最里面的返回点。
+
+实参value用作该catch的返回值。
+
+如果tag没有返回点，则使用 data `(tag value)` 发出无捕获错误信号 `no-catch` error。
+
+#### 11.7.2 Examples of catch and throw ####
+
+使用catch和throw的一种方法是从双重嵌套循环中退出。(在大多数语言中，这将通过goto来完成。)这里我们计算 `(foo i j)` 对于i和j从0到9的变化:
+
+``` Elisp
+(defun search-foo ()
+  (catch 'loop
+    (let ((i 0))
+	  (while (< i 10)
+	    (let ((j 0))
+		  (while (< j 10)
+		    (if (foo i j)
+			    (throw 'loop (list i j)))
+			(setq j (1+ j))))
+		(setq i (1+ i))))))
+```
+
+如果foo返回非nil，则立即停止并返回i和j的列表。如果foo总是返回nil，则catch正常返回，并且值为nil，因为这是while的结果。
+
+这里有两个棘手的例子，略有不同，同时显示两个返回点。首先，两个具有相同标签的返回点，hack:
+
+``` Elisp
+(defun catch2 (tag)
+  (catch tag
+    (throw 'hack 'yes)))
+;  catch2
+
+(catch 'hack
+  (print (catch2 'hack))
+  'no)
+
+```
+
+因为两个返回点都有与throw匹配的标记，所以它会转到内部的返回点，即在catch2中建立的返回点。因此，catch2通常返回值yes，并打印该值。最后，外部catch中的第二个body形式(no)被求值并从外部catch返回。
+
+现在让我们改变给catch2的参数:
+
+``` Elisp
+(catch 'hack
+  (print (catch2 'quux))
+  'no)
+;  yes
+```
+
+我们仍然有两个返回点，但这一次只有外部的一个有标签hack;内部的标签quux代替。因此，throw使外部catch返回值yes。函数print永远不会被调用，body-form 'no也永远不会被求值。
+
+#### 11.7.3 Errors ####
+
+[Errors](https://www.gnu.org/software/emacs/manual/html_node/elisp/Errors.html)
+
+#### 11.7.4 Cleaning Up from Nonlocal Exits ####
 
 
 ---
 
+#### 宏: `` ####
 
 #### 函数: `` ####
 
