@@ -9652,6 +9652,806 @@ Emacs包含一个名为 `with-temp-buffer` 的标准宏，它可以扩展成以�
 
 这个例子有一个小错误:如果用户输入C-g来退出，并且退出发生在ftp-setup-buffer函数返回之后，但在设置变量process之前，进程不会被杀死。没有简单的方法来修复这个bug，但至少不太可能。
 
+## 12 Variables 变量 ##
+
+变量是程序中用来表示值的名称。在Lisp中，每个变量由一个Lisp符号表示(参见符号)。变量名就是符号的名称，变量的值存储在符号的 value cell 中。参见符号组件 Symbol Components。在Emacs Lisp中，符号作为变量的使用与作为函数名的使用是独立的。
+
+如本手册前面所述，Lisp程序主要由Lisp对象表示，其次才是文本。Lisp程序的文本形式是由构成程序的Lisp对象的读语法给出的。因此，Lisp程序中变量的文本形式是使用表示该变量的符号的read语法编写的。
+
+
+* Global Variables
+* Variables that Never Change
+* Local Variables
+* When a Variable is Void
+* Defining Global Variables
+* Tips for Defining Variables Robustly
+* Accessing Variable Values
+* Setting Variable Values
+* Running a function when a variable is changed.
+* Scoping Rules for Variable Bindings
+* Buffer-Local Variables
+* File Local Variables
+* Directory Local Variables
+* Connection Local Variables
+* Variable Aliases
+* Variables with Restricted Values
+* Generalized Variables
+* Multisession Variables
+
+### 12.1 Global Variables ###
+
+最简单的使用变量的方法是全局的。这意味着变量一次只有一个值，并且这个值在整个Lisp系统中有效(至少暂时有效)。该值在指定新值之前一直有效。当一个新值替换旧值时，旧值的痕迹不会保留在变量中。
+
+使用setq为符号指定一个值。例如,
+
+``` Elisp
+(setq x '(a b))
+```
+
+给变量x赋值(a b)。注意setq是一个特殊形式(参见特殊形式);它不计算它的第一个参数，即变量名，但它计算第二个参数，即新值。
+
+一旦变量有了值，您就可以使用符号本身作为表达式来引用它。因此,
+
+``` Elisp
+x ⇒ (a b)
+```
+
+假设上面显示的setq表单已经执行。
+
+如果再次设置相同的变量，新值将替换旧值:
+
+``` Elisp
+x
+     ⇒ (a b)
+
+(setq x 4)
+     ⇒ 4
+
+x
+     ⇒ 4
+```
+
+### 12.2 Variables that Never Change ###
+
+在Emacs Lisp中，某些符号通常对自己求值。这些包括nil和t，以及任何名称以':'开头的符号(这些被称为关键字keywords)。这些符号不能重新绑定，也不能改变它们的值。任何设置或绑定nil或t的尝试都表示设置常量错误。对于关键字(名称以':'开头的符号)来说也是如此，如果它被嵌入到标准数组中，除了将这样的符号设置为自身不是错误之外。
+
+``` Elisp
+nil ≡ 'nil
+     ⇒ nil
+
+(setq nil 500)
+error→ Attempt to set constant symbol: nil
+```
+
+#### 函数: `keywordp object` ####
+
+如果对象是一个名称以':'开头的符号，则函数返回t，并将其存储在标准数组中，否则返回nil。
+
+这些常量从根本上不同于使用 `defconst` 特殊形式定义的常量(参见定义全局变量 Defining Global Variables)。`defconst` 形式用于通知读者您不打算更改变量的值，但是如果您确实更改了它，Emacs不会引发错误。
+
+由于各种实际原因，少量附加符号被设置为只读。这些选项包括 `enable-multibyte-characters`、`most-positive-fixnum`、`most-negative-fixnum` 以及其他一些选项。任何设置或绑定这些的尝试也会发出设置常数错误的信号。
+
+### 12.3 Local Variables ###
+
+全局变量的值一直持续到被新值显式取代。有时给变量一个局部值是很有用的——这个值只在Lisp程序的某个特定部分起作用。当一个变量有一个局部值时，我们说它是局部绑定到那个值的，并且它是一个局部变量。
+
+例如，当调用函数时，其参数变量接收局部值，这些值是提供给函数调用的实际参数;这些局部绑定在函数体中生效。再举一个例子，let特殊形式显式地为特定变量建立局部绑定，这些绑定仅在let形式的主体内生效。
+
+我们还谈到全局绑定，这是(概念上 conceptually)保存全局值的地方。
+
+建立一个局部绑定可以省去变量之前的值(或者没有)。我们说前面的值被遮蔽了(shadowed)。全局值和局部值都可能被遮蔽。如果本地绑定有效，则在本地变量上使用setq将指定的值存储在本地绑定中。当该局部绑定不再有效时，先前隐藏的值(或缺少值)就会返回。
+
+一个变量可以同时有多个本地绑定(例如，如果有嵌套的let形式绑定变量)。当前绑定是实际生效的本地绑定。它通过计算变量符号来确定返回的值，并且它是setq所作用的绑定。
+
+对于大多数目的，您可以将当前绑定视为最内层的本地绑定，如果没有本地绑定，则可以将其视为全局绑定。更准确地说，称为 *作用域规则 scoping rule* 的规则决定了局部绑定在程序中的哪个位置生效。Emacs Lisp中的默认作用域规则称为 *动态作用域 dynamic scoping*，它简单地指出，在程序执行的任何给定点上的当前绑定都是为仍然存在的变量最近创建的绑定。有关动态作用域和另一种称为 *词法作用域 lexical scoping* 的作用域规则的详细信息，请参见 变量绑定的作用域规则 Scoping Rules for Variable Bindings。最近，Emacs正朝着在越来越多的地方使用词法绑定的方向发展，其目标是最终使词法绑定成为默认值。特别是，所有Emacs Lisp源文件和 `*scratch*` 缓冲区都使用词法作用域。
+
+用于创建局部绑定的特殊形式 `let` 和 `let*` 存在:
+
+#### 特殊形式: `let (bindings...) forms...` ####
+
+这个特殊形式为特定的一组变量设置本地绑定(由绑定指定)，然后按文本顺序计算所有表单。它的返回值是forms中最后一个表单的值。let设置的本地绑定将仅在表单主体内生效。
+
+每个绑定都是
+
+1. 一个符号 a symbol，在这种情况下，该符号局部绑定为nil;
+2. 形式的列表 (symbol value-form)，在这种情况下，symbol局部绑定到 `value-form` 的求值结果。如果省略value-form，则使用nil。
+
+绑定中的所有值形式在将任何符号绑定到它们之前，都按照它们出现的顺序求值。这里有一个例子: z被绑定到y的旧值，即2，而不是y的新值，即1。
+
+``` Elisp
+(setq y 2)
+;  2
+
+(let ((y 1)
+      (z y))
+  (list y z))
+;  (1 2)
+```
+
+另一方面，绑定的顺序是未指定的:在下面的示例中，可能打印1或2。
+
+``` Elisp
+(let ((x 1)
+      (x 2))
+  (print x))
+```
+
+因此，避免在一个let形式中多次绑定一个变量。
+
+#### 特殊形式: `let* (bindings...) forms...` ####
+
+这种特殊的形式类似于 `let`，但是它在计算每个变量的局部值之后，在计算下一个变量的局部值之前绑定每个变量。因此，绑定中的表达式可以引用前面以 `let*` 形式绑定的符号。将下面的示例与上面的let示例进行比较。
+
+``` Elisp
+(setq y 2)
+     ⇒ 2
+
+(let* ((y 1)
+       (z y))    ; Use the just-established value of y.
+  (list y z))
+     ⇒ (1 1)
+```
+
+基本上，上例中x和y的 `let*` 绑定等同于使用嵌套let绑定:
+
+``` Elisp
+(let ((y 1))
+  (let ((z y))
+    (list y z)))
+```
+
+#### 特殊形式: `letrec (bindings...) forms...` ####
+
+这种特殊的形式类似于 `let*`，但是所有的变量都是在计算任何局部值之前绑定的。然后将这些值赋给本地绑定变量。这只在 词法绑定 lexical binding 生效时有用，并且您希望创建的 闭包(closures) 引用使用 `let*` 时尚未生效的绑定。
+
+例如，这里有一个闭包，它在运行一次后将自己从钩子中移除:
+
+``` Elisp
+(letrec ((hookfun (lambda ()
+                    (message "Run once")
+                    (remove-hook 'post-command-hook hookfun))))
+  (add-hook 'post-command-hook hookfun))
+```
+
+#### 特殊形式: `dlet (bindings...) forms...` ####
+
+这种特殊的形式类似于let，但它动态地绑定了所有变量。这很少有用—您通常希望动态地绑定普通变量和特殊变量(即使用defvar定义的变量)，这就是let所做的。
+
+当与假设某些变量是动态绑定的旧代码接口时，dlet可能很有用(请参阅动态绑定 Dynamic binding)，但是defvar这些变量是不切实际的。dlet将暂时使绑定的变量特殊，执行表单，然后再次使变量非特殊。
+
+#### 特殊形式: `named-let name bindings &rest body` ####
+
+这种特殊形式是受 Scheme 语言启发的循环结构。它类似于 let:它在绑定中绑定变量，然后求值。然而，`named-let` 也将name绑定到一个局部函数，其形式参数是绑定中的变量，其主体是body。这允许body通过调用name递归地调用自身，其中传递给name的参数用作递归调用中绑定变量的新值。
+
+对数字列表求和的循环示例:
+
+``` Elisp
+(named-let sum ((numbers '(1 2 3 4))
+                (running-sum 0))
+  (if numbers
+      (sum (cdr numbers) (+ running-sum (car numbers)))
+    running-sum))
+;  10
+```
+
+对位于body尾部位置的name的递归调用保证被优化为尾部调用，这意味着无论递归运行多深，它们都不会消耗任何额外的堆栈空间。这样的递归调用将有效地跳到循环的顶部，并为变量赋新值。
+
+如果函数调用是最后完成的事情，那么调用返回的值就是body本身的值，就像上面对sum的递归调用一样。
+
+> 警告: `name-let` 仅在启用词法绑定时才按预期工作。参见词法绑定 Lexical binding。
+
+下面是创建本地绑定的其他工具的完整列表:
+
+* 函数调用(参见函数 Functions)。
+* 宏调用(参见宏 Macros)。
+* 条件情况(参见错误 Errors)。
+
+变量也可以有 `buffer-local` 绑定(参见 Buffer-local Variables);
+
+一些变量具有终端本地绑定(参见多终端 Multiple Terminals)。这些类型的绑定的工作方式有点像普通的本地绑定，但是它们是本地化的，这取决于您在Emacs中的位置。
+
+### 12.4 When a Variable is Void ###
+
+如果一个变量的符号有一个未赋值单元格(参见符号组件 Symbol Components)，则该变量为void。
+
+在Emacs Lisp的默认动态作用域规则(参见变量绑定的作用域规则 Scoping Rules for Variable Bindings)下，值单元存储变量的当前(局部或全局)值。请注意，未分配的值单元格与值单元格中有nil是不一样的。符号nil是一个Lisp对象，可以是变量的值，就像任何其他对象一样;但它仍然是一个值。如果一个变量是空的，尝试计算该变量会发出空变量错误的信号，而不是返回一个值。
+
+在可选的词法作用域规则下，值单元格只保存变量的全局值——任何词法绑定构造之外的值。当变量被词法绑定时，局部值由词法环境决定;因此，即使变量符号的值单元格未赋值，变量也可以具有局部值。
+
+#### 函数: `makunbound symbol` ####
+
+这个函数清空符号的值单元格，使变量为空。它返回符号。
+
+如果symbol具有动态局部绑定，makunbound将使当前绑定失效，并且这种失效仅在局部绑定生效时持续。之后，先前隐藏的局部或全局绑定被重新暴露;然后变量将不再为空，除非重新暴露的绑定也是空的。
+
+下面是一些例子(假设动态绑定生效):
+
+``` Elisp
+(setq x 1)               ; Put a value in the global binding.
+     ⇒ 1
+(let ((x 2))             ; Locally bind it.
+  (makunbound 'x)        ; Void the local binding.
+  x)
+error→ Symbol's value as variable is void: x
+
+x                        ; The global binding is unchanged.
+     ⇒ 1
+
+(let ((x 2))             ; Locally bind it.
+  (let ((x 3))           ; And again.
+    (makunbound 'x)      ; Void the innermost-local binding.
+    x))                  ; And refer: it’s void.
+error→ Symbol's value as variable is void: x
+
+(let ((x 2))
+  (let ((x 3))
+    (makunbound 'x))     ; Void inner binding, then remove it.
+  x)                     ; Now outer let binding is visible.
+     ⇒ 2
+```
+
+#### 函数: `boundp variable` ####
+
+如果变量(符号)不为空，则返回t，如果为空则返回nil。
+
+下面是一些例子(假设动态绑定生效):
+
+``` Elisp
+(boundp 'abracadabra)          ; Starts out void.
+     ⇒ nil
+
+(let ((abracadabra 5))         ; Locally bind it.
+  (boundp 'abracadabra))
+     ⇒ t
+
+(boundp 'abracadabra)          ; Still globally void.
+     ⇒ nil
+
+(setq abracadabra 5)           ; Make it globally nonvoid.
+     ⇒ 5
+
+(boundp 'abracadabra)
+     ⇒ t
+```
+
+### 12.5 Defining Global Variables ###
+
+变量定义 variable definition 是一种结构，它宣布您打算将符号用作全局变量。它使用特殊的形式defvar或defconst，它们将在下面进行说明。
+
+变量定义有三个目的。
+
+1. 它告知阅读代码的人该符号打算以某种方式使用(作为变量)。
+2. 它通知Lisp系统这一点，可选地提供一个初始值和一个文档字符串。
+3. 它向编程工具(如etags)提供信息，使它们能够找到定义变量的位置。
+
+defconst和defvar之间的区别主要是意图的问题，用于告知人类读者是否应该更改值。Emacs Lisp实际上并不阻止您更改用defconst定义的变量的值。这两种形式之间的一个显著区别是，defconst无条件地初始化变量，而defvar只有在它最初为空时才初始化它。
+
+要定义一个可定制的变量，应该使用defcustom(它将defvar作为子例程调用)。参见定义自定义变量 Defining Customization Variables。
+
+#### 特殊形式: `defvar symbol [value [doc-string]]` ####
+
+这个特殊的形式将symbol定义为一个变量。注意符号不会被求值;要定义的符号应该显式地出现在defvar形式中。该变量被标记为特殊，这意味着它应该始终是动态绑定的(参见变量绑定的作用域规则 Scoping Rules for Variable Bindings)。
+
+* 如果指定了value，并且symbol为void(即没有动态绑定值);(参见当变量为Void时 When a Variable is Void)，则计算value并将symbol设置为结果。
+* 但是如果symbol不是void，则不计算value，并且symbol的值保持不变。
+* 如果value被省略，symbol的值在任何情况下都不会被改变。
+
+注意，指定一个值，即使是nil，也会将该变量永久标记为特殊值。然而，如果省略value，则变量仅在局部被标记为特殊(即在当前词法作用域中，或在顶层文件 top-level file)。这对于抑制字节编译警告非常有用，请参阅编译器错误 Compiler Errors。
+
+如果symbol在当前缓冲区中具有buffer-local绑定，则defvar将作用于与缓冲区无关的默认值，而不是buffer-local绑定。如果默认值为空，则设置默认值。参见缓冲区局部变量 Buffer-Local Variables。
+
+如果symbol已经被let绑定(例如，如果defvar形式出现在let形式中)，则defvar设置顶层默认值，如 `set-default-top-value`。let绑定在其绑定构造退出之前一直有效。参见变量绑定的作用域规则 Scoping Rules for Variable Bindings。
+
+当您在Emacs Lisp模式下使用 `C-M-x (eval-defun)` 或 `C-x C-e (eval-last-sexp)` 计算顶级defvar form时，这两个命令的一个特殊特性安排无条件地设置变量，而不测试其值是否为空。
+
+如果提供了 `doc-string` 参数，它将为变量指定文档字符串(存储在符号的 `variable-documentation` 属性中)。见文档 Documentation。
+
+这里有一些例子。这个表单定义了foo，但没有初始化它:
+
+``` Elisp
+(defvar foo)
+;  foo
+```
+
+下面的例子将bar的值初始化为23，并给它一个文档字符串:
+
+``` Elisp
+(defvar bar 23
+  "The normal weight of a bar.")
+;  bar
+```
+
+defvar返回符号，但它通常用于文件的顶层，在那里它的值无关紧要。
+
+有关使用不带值的defvar的更详细示例，请参见Local defvar示例 Local defvar example。
+
+#### 特殊形式: `defconst symbol value [doc-string]` ####
+
+这个特殊的形式将symbol定义为一个值并对其进行初始化。它告诉阅读你代码的人，符号有一个标准的全局值，在这里建立，不应该被用户或其他程序改变。注意符号不会被求值;要定义的符号必须显式地出现在defconst中。
+
+像defvar一样，defconst形式将变量标记为特殊，这意味着它应该始终是动态绑定的(参见变量绑定的作用域规则 Scoping Rules for Variable Bindings)。此外，它还将变量标记为有风险的(参见文件局部变量 File Local Variables)。
+
+defconst总是计算value，并将symbol的值设置为结果。如果symbol在当前缓冲区中有buffer-local绑定，则defconst将设置默认值，而不是buffer-local值。(但是您不应该为使用defconst定义的符号制作缓冲区局部绑定。)
+
+使用defconst的一个例子是Emacs对float-pi(数学常数pi)的定义，任何人都不应该改变它(尽管印第安纳州立法机构试图改变它)。然而，正如第二种形式所示，defconst只是建议的。
+
+``` Elisp
+(defconst float-pi 3.141592653589793 "The value of Pi.")
+     ⇒ float-pi
+
+(setq float-pi 3)
+     ⇒ float-pi
+
+float-pi
+     ⇒ 3
+```
+
+> 警告:如果您使用defconst或defvar特殊形式，而变量具有局部绑定(使用let或函数参数)，则它将设置局部绑定而不是全局绑定。这不是你通常想要的。为了防止这种情况发生，在文件的顶层使用这些特殊的表单，在这里通常没有有效的局部绑定，并确保在为变量进行局部绑定之前加载文件。
+
+### 12.6 Tips for Defining Variables Robustly ###
+
+当定义值为函数或函数列表的变量时，请分别使用以 `-function` 或 `-functions` 结尾的名称。
+
+还有其他几个变量名约定;以下是完整的清单:
+
+* `-hook`: 变量是一个普通的 hook(见 Hooks)
+* `-function`: 值是一个函数
+* `-functions`: 值是一个函数列表
+* `-form`: 值是一个形式(一个表达式)
+* `-forms`: 值是形式列表
+* `-predicate`: 值是一个谓词, 一个有一个参数的函数，成功时返回非nil，失败时返回nil。
+* `-flag`: 该值仅在是否为nil时才有意义。由于随着时间的推移，这些变量通常最终会获得更多的值，因此不强烈推荐使用这种约定。
+* `-program`: 值是一个程序名
+* `-command`: 值是一个完整的 shell 命令
+* `-switches`: 该值指定命令的选项。
+* `prefix--`: 该变量用于内部使用，并在文件 `prefix.el` 中定义。(2018年之前贡献的Emacs代码可能会遵循其他约定，这些约定正在逐步淘汰。)
+* `-internal`: 该变量用于内部使用，并在C代码中定义。(2018年之前贡献的Emacs代码可能会遵循其他约定，这些约定正在逐步淘汰。)
+
+当你定义一个变量时，总是要考虑是否应该把它标记为安全的还是有风险的;参见文件局部变量 File Local Variables。
+
+当定义和初始化一个包含复杂值的变量(比如主模式的语法表)时，最好将值的整个计算放入defvar中，如下所示:
+
+``` Elisp
+(defvar my-major-mode-syntax-table
+  (let ((table (make-syntax-table)))
+    (modify-syntax-entry ?# "<" table)
+    …
+    table)
+  docstring)
+```
+
+这种方法有几个好处。
+
+1. 首先，如果用户在加载文件时退出，则变量要么仍然未初始化，要么初始化正确，永远不会处于两者之间。如果它仍然未初始化，重新加载文件将正确初始化它。
+2. 第二，一旦变量初始化，重新加载文件不会改变它;如果用户改变了它的值，这一点很重要。
+3. 第三，用C-M-x计算defvar形式将完全重新初始化变量。
+
+### 12.7 Accessing Variable Values ###
+
+引用变量的通常方法是写出命名它的符号。参见符号形式。
+
+有时，您可能希望引用仅在运行时确定的变量。在这种情况下，不能在程序文本中指定变量名。您可以使用 `symbol-value` 函数来提取值。
+
+#### 函数: `symbol-value symbol` ####
+
+这个函数返回存储在符号的值单元格中的值。这是存储变量当前(动态)值的地方。如果变量没有本地绑定，这就是它的全局值。如果变量为空，则会发出空变量错误信号 void-variable error。
+
+如果变量是词法绑定的，symbol-value报告的值不一定与变量的词法值相同，后者由词法环境决定，而不是由符号的值单元决定。参见变量绑定的作用域规则 Scoping Rules for Variables Bindings。
+
+``` Elisp
+
+(setq abracadabra 5)
+     ⇒ 5
+
+(setq foo 9)
+     ⇒ 9
+
+;; Here the symbol abracadabra
+;;   is the symbol whose value is examined.
+(let ((abracadabra 'foo))
+  (symbol-value 'abracadabra))
+     ⇒ foo
+
+;; Here, the value of abracadabra,
+;;   which is foo,
+;;   is the symbol whose value is examined.
+(let ((abracadabra 'foo))
+  (symbol-value abracadabra))
+     ⇒ 9
+
+(symbol-value 'abracadabra)
+     ⇒ 5
+```
+
+### 12.8 Setting Variable Values ###
+
+更改变量值的常用方法是使用特殊形式 `setq`。当您需要在运行时计算变量的选择时，请使用函数 `set`。
+
+#### 特殊形式: `setq [symbol form]...` ####
+
+这种特殊形式是更改变量值的最常用方法。每个符号被赋予一个新值，这是计算相应形式的结果。符号的当前绑定被更改。
+
+Setq不求值;它设置了你要写的符号。我们说这个论点被自动引用了。setq中的“q”代表“引号”。
+
+setq表单的值就是最后一个表单的值。
+
+``` Elisp
+(setq x (1+ 2))
+     ⇒ 3
+
+x                   ; x now has a global value.
+     ⇒ 3
+
+(let ((x 5))
+  (setq x 6)        ; The local binding of x is set.
+  x)
+     ⇒ 6
+
+x                   ; The global value is unchanged.
+     ⇒ 3
+
+```
+
+注意，先计算第一种形式，然后设置第一个符号，然后计算第二种形式，然后设置第二个符号，以此类推:
+
+``` Elisp
+(setq x 10          ; Notice that x is set before
+      y (1+ x))     ;   the value of y is computed.
+     ⇒ 11
+```
+
+#### 函数: `set symbol value` ####
+
+这个函数将值放入符号的值单元格中。由于它是一个函数而不是特殊形式，因此为symbol编写的表达式被求值以获得要设置的符号。返回值为value。
+
+当动态变量绑定生效时(默认值)，set与setq具有相同的效果，除了set计算其符号参数而setq不计算之外。但是，当变量被词法绑定时，set影响它的动态值，而setq影响它的当前(词法)值。参见变量绑定的作用域规则。
+
+``` Elisp
+(set one 1)
+error→ Symbol's value as variable is void: one
+
+(set 'one 1)
+     ⇒ 1
+
+(set 'two 'one)
+     ⇒ one
+
+(set two 2)         ; two evaluates to symbol one.
+     ⇒ 2
+
+one                 ; So it is one that was set.
+     ⇒ 2
+(let ((one 1))      ; This binding of one is set,
+  (set 'one 3)      ;   not the global value.
+  one)
+     ⇒ 3
+
+one
+     ⇒ 2
+```
+
+如果symbol实际上不是一个符号，则会发出错误的类型参数错误信号。
+
+``` Elisp
+(set '(x y) 'z)
+error→ Wrong type argument: symbolp, (x y)
+```
+
+#### 宏: `setopt [symbol form]...` ####
+
+这类似于setq(见上文)，但用于用户选项。这个宏使用自定义机制来设置变量(参见定义自定义变量 Defining Customization Variables)。特别是，`setopt`将运行与变量关联的setter函数。例如，如果你有:
+
+``` Elisp
+(defcustom my-var 1
+  "My var."
+  :type 'number
+  :set (lambda (var val)
+         (set-default var val)
+		 (message "We set %s to %s" var val)))
+```
+
+然后下面的代码，除了将my-var设置为 2 之外，还会发出一条消息:
+
+``` Elisp
+(setopt my-var 2)
+```
+
+setopt还检查该值是否对用户选项有效。例如，使用setopt将用数字类型定义的用户选项设置为字符串将发出错误信号。
+
+与defcustom和相关的定制命令(如customize-variable)不同，setopt用于非交互式使用，特别是在用户初始化文件中。因此，它不记录标准的、保存的和用户设置的值，也不将变量标记为要保存在自定义文件中的候选变量。
+
+setopt宏可以用于常规的非用户选项变量，但是比setq效率低得多。这个宏的主要用例是在用户的init文件中设置用户选项。
+
+### 12.9 Running a function when a variable is changed. ###
+
+当变量改变其值时，有时采取一些操作是有用的。可变观察点 variable watchpoint 功能提供了这样做的方法。此特性的一些可能用途包括保持显示与变量设置同步，以及调用调试器来跟踪对变量的意外更改(请参阅在修改变量时进入调试器)。
+
+以下函数可用于操作和查询变量的watch函数。
+
+#### 函数: `add-variable-watcher symbol watch-function` ####
+
+这个函数安排每当符号被修改时调用 `watch-function`。通过别名(参见变量别名 Variable Aliases)进行修改将具有相同的效果。
+
+`watch-function` 将被调用，就在改变symbol的值之前，有4个参数:symbol, newval, operation, and where。
+
+* `symbol` 是被改变的变量。
+* `newval` 是它将被更改为的值。(旧的值可以在watch-function中作为symbol的值使用，因为它还没有被更改为newval。)
+* `operation` 是一个表示更改类型的符号，它是:set、let、unlet、makunbound或defvaralias之一。
+* `where` 如果buffer-local值要被更改，则 where 为缓冲区，否则为nil。
+
+#### 函数: `remove-variable-watcher symbol watch-function` ####
+
+这个函数从符号的观察者列表中移除watch-function。
+
+#### 函数: `get-variable-watchers symbol` ####
+
+这个函数返回符号的活动监视函数列表。
+
+#### 12.9.1 Limitations 限制 ####
+
+有几种方法可以在不触发观察点的情况下修改变量(或至少看起来被修改)。
+
+由于观察点被附加到符号上，对变量中包含的对象的修改(例如，通过列表修改函数，参见修改现有列表结构 Modifying Existing List Structure)不会被该机制捕获。
+
+此外，C代码可以直接修改变量的值，绕过观察点机制。
+
+这个特性的一个小限制(同样是因为它针对的是符号)是，只能观察动态范围的变量。这几乎没有什么困难，因为对词法变量的修改可以通过检查变量作用域内的代码轻松发现(与动态变量不同，动态变量可以被任何代码修改，请参阅变量绑定的作用域规则)。
+
+### 12.10 Scoping Rules for Variable Bindings ###
+
+当为变量创建局部绑定时，该绑定仅在程序的有限部分内生效(请参阅局部变量)。本节将详细描述这意味着什么。
+
+每个局部绑定都有一定的范围和程度。作用域指的是文本源代码中可以访问绑定的位置。范围是指在程序执行时绑定存在的时间。
+
+默认情况下，Emacs创建的本地绑定是动态绑定。这样的绑定具有动态作用域，这意味着程序的任何部分都可能访问变量绑定。它还具有动态范围，这意味着绑定仅在绑定构造(例如let表单的主体)执行时才持续。
+
+Emacs可以选择性地创建词法绑定。词法绑定具有词法作用域，这意味着对变量的任何引用都必须在文本上位于绑定构造中。它还具有不确定的范围，这意味着在某些情况下，通过称为 *闭包 closures* 的特殊对象，即使在绑定构造完成执行之后，绑定也可以继续存在。
+
+多年来，动态绑定一直是(现在仍然是)Emacs的默认值，但最近Emacs在越来越多的地方转向使用词法绑定，其目标是最终使其成为默认值。
+
+下面的小节更详细地描述了动态绑定和词法绑定，以及如何在Emacs Lisp程序中启用词法绑定。
+
+
+* Dynamic Binding
+* Proper Use of Dynamic Binding
+* Lexical Binding
+* Using Lexical Binding
+* Converting to Lexical Binding
+
+#### 12.10.1 Dynamic Binding ####
+
+[Dynamic Binding](https://www.gnu.org/software/emacs/manual/html_node/elisp/Dynamic-Binding.html)
+
+默认情况下，Emacs所做的局部变量绑定是动态绑定。当一个变量被动态绑定时，在Lisp程序执行的任何时刻，它的当前绑定都只是为该符号最近创建的动态局部绑定，如果没有这样的局部绑定，则为全局绑定。
+
+动态绑定具有动态的作用域和范围，如下例所示:
+
+``` Elisp
+(defvar x -99)  ; x receives an initial value of −99.
+
+(defun getx ()
+  x)            ; x is used free in this function.
+
+(let ((x 1))    ; x is dynamically bound.
+  (getx))
+     ⇒ 1
+
+;; After the let form finishes, x reverts to its
+;; previous value, which is −99.
+
+(getx)
+     ⇒ -99
+```
+
+函数getx指向x。这是一个自由引用 free reference，在这个defun构造本身中没有对x的绑定。当我们从(动态)绑定x的let形式内部调用getx时，它会检索局部值(即1)。但是当我们在let形式外部调用getx时，它会检索全局值(即 `-99`)。
+
+下面是另一个例子，它演示了使用setq设置一个动态绑定变量:
+
+``` Elisp
+(defvar x -99)      ; x receives an initial value of −99.
+
+(defun addx ()
+  (setq x (1+ x)))  ; Add 1 to x and return its new value.
+
+(let ((x 1))
+  (addx)
+  (addx))
+     ⇒ 3           ; The two addx calls add to x twice.
+
+;; After the let form finishes, x reverts to its
+;; previous value, which is −99.
+
+(addx)
+     ⇒ -98
+```
+
+动态绑定在Emacs Lisp中以一种简单的方式实现。每个符号都有一个值单元格，它指定了它当前的动态值(或没有值)。参见符号组件。当一个符号被赋予动态局部绑定时，Emacs将值单元的内容(或没有)记录在堆栈中，并将新的局部值存储在值单元中。当绑定构造完成执行时，Emacs将旧值从堆栈中弹出，并将其放入值单元中。
+
+注意，当使用动态绑定的代码是本机编译时，本机编译器不会执行任何特定于Lisp的优化。
+
+#### 12.10.2 Proper Use of Dynamic Binding ####
+
+动态绑定是一个强大的特性，因为它允许程序引用未在其本地文本范围内定义的变量。但是，如果不加约束地使用，也会使程序难以理解。有两种简单的方法可以使用这个技巧:
+
+1. 如果变量没有全局定义，则仅在绑定构造中将其用作局部变量，例如在绑定变量的let形式的主体中。如果在整个程序中始终遵循这一约定，则变量的值将不会影响，也不会受到程序中其他地方使用同一变量符号的影响。
+2. 否则，用defvar、defconst(见定义全局变量)或defcustom(见定义自定义变量)定义变量。通常，该定义应该位于Emacs Lisp文件的顶层。尽可能地，它应该包含一个解释变量的含义和目的的文档字符串。您还应该选择变量的名称以避免名称冲突(参见Emacs Lisp编码约定 Emacs Lisp Coding Conventions [Emacs Lisp Coding Conventions](https://www.gnu.org/software/emacs/manual/html_node/elisp/Coding-Conventions.html))。
+
+然后，您可以在程序中的任何地方绑定变量，从而可靠地知道将会产生什么效果。无论在哪里遇到这个变量，都可以很容易地引用它的定义，例如，通过 `C-h-v` 命令(前提是变量定义已经加载到Emacs中)。请参见《GNU Emacs手册》中的名称帮助 Name Help。
+
+例如，对 `case-fold-search` 这样的可定制变量使用局部绑定是很常见的:
+
+``` Elisp
+(defun search-for-abc ()
+  "Search for the string \"abc\", ignoring case differences."
+  (let ((case-fold-search t))
+    (re-search-forward "abc")))
+```
+
+#### 12.10.3 Lexical Binding ####
+
+词法绑定是在24.1版本中作为可选特性引入Emacs的。我们预计其重要性将随着时间的推移而增加。词法绑定为优化提供了更多的机会，因此使用它的程序可能在未来的Emacs版本中运行得更快。词法绑定与并发性 concurrency 也更加兼容，并发性是在Emacs 26.1版中添加的。
+
+词法绑定变量具有 *词法作用域 lexical scope*，这意味着对该变量的任何引用都必须在文本上位于绑定构造中。下面是一个示例(参见使用词法绑定 Using Lexical Binding，了解如何实际启用词法绑定):
+
+``` Elisp
+(let ((x 1))    ; x is lexically bound.
+  (+ x 3))
+     ⇒ 4
+
+(defun getx ()
+  x)            ; x is used free in this function.
+
+(let ((x 1))    ; x is lexically bound.
+  (getx))
+error→ Symbol's value as variable is void: x
+```
+
+这里，变量x没有全局值。当它在词法上绑定在let形式中时，它可以在该let形式的文本范围内使用。但是它不能在从let形式调用的getx函数中使用，因为getx的函数定义发生在let形式本身之外。
+
+以下是词法绑定的工作原理。每个绑定构造定义一个词法环境，指定在该构造中绑定的变量及其局部值。当Lisp求值器需要一个变量的当前值时，它首先在词法环境中查找;如果没有在这里指定变量，它将在符号的值单元格中查找，动态值存储在这里。
+
+(在内部，词法环境是一个列表，其成员通常是 symbol-value pair的cons cell，但它的一些成员可以是符号而不是cons cell。列表中的符号意味着词法环境将该符号的变量声明为局部认为是动态绑定的。该列表可以作为第二个参数传递给eval函数，以便指定对表单求值的词法环境。看到Eval。然而，大多数Emacs Lisp程序不应该以这种方式直接与词法环境交互;只有专门的程序，比如调试器 debuggers。)
+
+词法绑定具有不确定的范围。即使在绑定构造完成执行之后，它的词法环境也可以在称为 *闭包Closures* 的Lisp对象中“保留”。闭包是在定义启用词法绑定的命名或匿名函数时创建的。有关详细信息，请参阅闭包。
+
+当闭包作为函数调用时，其定义中的任何词法变量引用都使用保留的词法环境。下面是一个例子:
+
+``` Elisp
+(defvar my-ticker nil)   ; We will use this dynamically bound
+                         ; variable to store a closure.
+
+(let ((x 0))             ; x is lexically bound.
+  (setq my-ticker (lambda ()
+                    (setq x (1+ x)))))
+    ⇒ (closure ((x . 0)) ()
+          (setq x (1+ x)))
+
+(funcall my-ticker)
+    ⇒ 1
+
+(funcall my-ticker)
+    ⇒ 2
+
+(funcall my-ticker)
+    ⇒ 3
+
+x                        ; Note that x has no global value.
+error→ Symbol's value as variable is void: x
+```
+
+let绑定定义了一个词法环境，其中变量x局部绑定为0。在这个绑定构造中，我们定义了一个lambda表达式，它将x加1并返回加1后的值。该lambda表达式自动转换为闭包，即使在let绑定构造退出后，其中的词法环境仍然存在。每次求值闭包时，它使用该词法环境中x的绑定，使x加1。
+
+请注意，与符号对象本身绑定的动态变量不同，词法变量和符号之间的关系仅存在于解释器(或编译器)中。因此，接受符号参数的函数(如symbol-value, boundp和set)只能检索或修改变量的动态绑定(即其符号值单元的内容)。
+
+#### 12.10.4 Using Lexical Binding ####
+
+当加载Emacs Lisp文件或计算Lisp缓冲区时，如果缓冲区局部变量lexical-binding为非nil，则启用词法绑定:
+
+##### 变量: `lexical-binding` #####
+
+如果这个buffer-local变量非nil，则使用词法绑定而不是动态绑定来评估Emacs Lisp文件和缓冲区。(但是，特殊变量仍然是动态绑定的;见下文)。如果为nil，则对所有局部变量使用动态绑定。这个变量通常是为整个Emacs Lisp文件设置的，作为文件局部变量(请参阅文件局部变量 File Local Variables)。请注意，与其他此类变量不同，这个变量必须在文件的第一行设置。
+
+当使用eval调用直接计算Emacs Lisp代码时，如果eval的词法参数为非nil，则启用词法绑定。看到Eval。
+
+词法绑定也在Lisp交互和IELM模式中启用，在 `*scratch*` 和 `*IELM*` 缓冲区中使用，也在通过 `M-: (eval-expression)` 计算表达式和处理Emacs的 `——eval` 命令行选项(参见《GNU Emacs手册》中的动作参数 Action Arguments)和emacsclient(参见《GNU Emacs手册》中的emacsclient选项)时启用。
+
+即使启用了词法绑定，某些变量也会继续被动态绑定。这些被称为 *特殊变量 special variables*。每个用defvar、defcustom或defconst定义的变量都是一个特殊的变量(参见定义全局变量)。所有其他变量都服从词法绑定。
+
+使用不带值的 `defvar`，可以只在一个文件中动态绑定变量，或者只在文件的一部分中绑定变量，同时仍然在其他地方对其进行词法绑定。例如:
+
+``` Elisp
+(let (_)
+  (defvar x)      ; Let-bindings of x will be dynamic within this let.
+  (let ((x -99))  ; This is a dynamic binding of x.
+    (defun get-dynamic-x ()
+      x)))
+
+(let ((x 'lexical)) ; This is a lexical binding of x.
+  (defun get-lexical-x ()
+    x))
+
+(let (_)
+  (defvar x)
+  (let ((x 'dynamic))
+    (list (get-lexical-x)
+          (get-dynamic-x))))
+    ⇒ (lexical dynamic)
+```
+
+##### 函数: `special-variable-p symbol` #####
+
+如果symbol是一个特殊变量(即，它有defvar, defcustom或defconst变量定义)，则此函数返回非nil。否则，返回值为nil。
+
+请注意，由于这是一个函数，它只能为永久特殊的变量返回非nil，而不能为那些仅在当前词法范围内特殊的变量返回非nil。
+
+不支持在函数中使用特殊变量作为形式参数。
+
+#### 12.10.5 Converting to Lexical Binding ####
+
+将Emacs Lisp程序转换为词法绑定很容易。首先，在Emacs Lisp源文件的头行中添加一个 `lexical-binding` 为 t 的文件局部变量设置(请参阅文件局部变量 File Local Variables)。其次，检查程序中需要动态绑定的每个变量是否都有变量定义，这样它就不会不经意地在词法上绑定。
+
+找出哪些变量需要变量定义的一种简单方法是对源文件进行字节编译。参见字节编译 Byte Compilation。如果在let形式之外使用非特殊变量，字节编译器将警告对自由变量的引用或赋值。如果绑定了一个非特殊变量，但没有在let形式中使用，则字节编译器将警告未使用的词法变量。如果使用特殊变量作为函数参数，字节编译器也会发出警告。
+
+关于对自由变量的引用或赋值的警告通常是一个明确的信号，表明该变量应该被标记为动态作用域，因此您需要在第一次使用该变量之前添加适当的defvar。
+
+关于未使用变量的警告可能是一个很好的提示，表明该变量打算被动态作用域(因为它实际上是在另一个函数中使用的)，但它也可能表明该变量实际上没有被使用，可以简单地删除。因此，您需要找出是哪种情况，并在此基础上添加defvar或完全删除该变量。如果不可能或不希望删除(通常是因为它是一个正式参数，我们不能或不想更改所有调用者)，您还可以在变量名前添加一个下划线，以向编译器表明这是一个已知不会使用的变量。
+
+##### Cross-file variable checking #####
+
+> 警告:这是一个实验性的功能，可能会在没有事先通知的情况下改变或消失。
+
+字节编译器还可以对其他Emacs Lisp文件中的特殊词法变量发出警告，通常表示缺少defvar声明。这个有用但有些特殊的检查需要三个步骤:
+
+1. 将环境变量 `EMACS_GENERATE_DYNVARS` 设置为非空字符串，对其特殊变量声明可能感兴趣的所有文件进行字节编译。这些通常是同一包或相关包或Emacs子系统中的所有文件。该进程将为每个已编译的Emacs Lisp文件生成一个以 `.dynvars` 结尾的文件。
+2. 将 `.dynvars` 文件连接到单个文件中。
+3. 对需要检查的文件进行字节编译，这一次将环境变量 `EMACS_DYNVARS_FILE` 设置为步骤2中创建的聚合文件的名称。
+
+这里有一个例子说明了如何做到这一点，假设Unix shell和make用于字节编译:
+
+``` shell
+$ rm *.elc                                # force recompilation
+$ EMACS_GENERATE_DYNVARS=1 make           # generate .dynvars
+$ cat *.dynvars > ~/my-dynvars            # combine .dynvars
+$ rm *.elc                                # force recompilation
+$ EMACS_DYNVARS_FILE=~/my-dynvars make    # perform checks
+```
+
+### 12.11 Buffer-Local Variables ###
+
+在大多数编程语言中，全局和局部变量绑定都以这样或那样的形式存在。但是，Emacs还支持额外的、不常见的变量绑定类型，例如仅在一个缓冲区中应用的缓冲区本地绑定。在不同的缓冲区中为变量设置不同的值是一种重要的定制方法。(变量也可以具有对每个终端本地的绑定。参见多终端 Multiple Terminals。)
+
+
+* Introduction to Buffer-Local Variables
+* Creating and Deleting Buffer-Local Bindings
+* The Default Value of a Buffer-Local Variable
+
+#### 12.11.1 Introduction to Buffer-Local Variables ####
+
+[Introduction to Buffer-Local Variables](https://www.gnu.org/software/emacs/manual/html_node/elisp/Intro-to-Buffer_002dLocal.html)
+
+#### 12.11.2 Creating and Deleting Buffer-Local Bindings ####
+
+#### 12.11.3 The Default Value of a Buffer-Local Variable ####
+
+### 12.12 File Local Variables ###
+
+### 12.13 Directory Local Variables ###
+
+### 12.14 Connection Local Variables ###
+
+### 12.15 Variable Aliases ###
+
+### 12.16 Variables with Restricted Values ###
+
+### 12.17 Generalized Variables ###
+
+### 12.18 Multisession Variables ###
+
+
+
+
+
+
 ---
 
 #### 宏: `` ####
