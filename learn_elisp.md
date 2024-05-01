@@ -9320,8 +9320,337 @@ throw的目的是从先前用catch建立的返回点返回。参数标签用于�
 
 [Errors](https://www.gnu.org/software/emacs/manual/html_node/elisp/Errors.html)
 
+当Emacs Lisp试图计算由于某种原因无法计算的表单时，它会发出错误信号。
+
+当发出错误信号时，Emacs的默认反应是打印错误消息并终止当前命令的执行。在大多数情况下，这是正确的做法，例如在缓冲区末尾键入C-f。
+
+在复杂的程序中，简单的终止可能不是您想要的。例如，程序可能对数据结构进行了临时更改，或者创建了应该在程序结束之前删除的临时缓冲区。在这种情况下，您可以使用 `unwind-protect` 来建立 *清理表达式 cleanup expressions*  ，以便在发生错误时进行计算。(参见清理非本地出口。 Cleaning Up From Nonlocal Exits)有时，您可能希望程序在子例程出错的情况下继续执行。在这些情况下，您将使用条件-情况来建立错误处理程序，以便在发生错误时恢复控制。
+
+要报告问题而不终止当前命令的执行，可以考虑发出警告。请参阅报告警告 Reporting Warnings。
+
+抵制使用错误处理将控制从程序的一部分转移到另一部分的诱惑;用接球和扔球来代替。参见显式非局部退出:catch和throw Explicit Nonlocal Exits: catch and throw。
+
+* How to Signal an Error
+* How Emacs Processes Errors
+* Writing Code to Handle Errors
+* Error Symbols and Condition Names
+
+##### 11.7.3.1 How to Signal an Error #####
+
+发出错误信号意味着开始错误处理。错误处理通常会终止正在运行的程序的全部或部分，并返回到为处理错误而设置的点(请参阅Emacs如何处理错误 How Emacs Processes Errors)。这里我们描述如何发出错误信号。
+
+大多数错误在Lisp原语中自动发出信号，您可以出于其他目的调用这些原语，例如，如果您试图取整数的CAR或在缓冲区末尾移动一个字符。还可以使用函数error和signal显式地表示错误。
+
+当用户键入C-g时发生的退出不被视为错误，但它的处理方式几乎与错误一样。看到Quitting。
+
+每个错误都以这样或那样的方式指定一个错误消息。消息应该说明哪里出了问题(“文件不存在”)，而不是事情应该如何(“文件必须存在”)。Emacs Lisp中的约定是错误消息应该以大写字母开头，但不应该以任何标点符号结束。
+
+#### 函数: `error format-string &rest args` ####
+
+此函数通过将 `format-message` (请参阅格式化字符串 Formatting Strings)应用于 *format-string* 和 *args* 来构造错误消息，以发出错误信号。
+
+下面的例子展示了error的典型用法:
+
+``` Elisp
+(error "That is an error -- try something else")
+;  error→ That is an error -- try something else
+
+(error "Invalid name `%s'" "A%%B")
+; error→ Invalid name ‘A%%B’
+```
+
+Error通过带两个参数调用signal来工作:错误符号Error和包含format-message返回的字符串的列表。
+
+通常，格式中的重音和撇号会转换为匹配的弯曲引号，例如，`` "Missing `%s'" might result in "Missing ‘foo’"  ``。请参阅文本引用风格 Text Quoting Style，了解如何影响或抑制这种翻译。
+
+> 警告:如果你想使用你自己的字符串作为错误消息，不要只写(error string)。如果字符串字符串包含 % 或 反引号，它可能会被重新格式化，产生不希望的结果。相反，使用(error "%s" string)。
+> 当noninteractive为非nil时(请参阅批处理模式 Batch Mode)，如果所发出的错误没有处理程序，则此函数会杀死Emacs。
+
+#### 函数: `signal error-symbol data` ####
+
+这个函数用 `error-symbol` 表示错误。参数data是与错误情况相关的附加Lisp对象的列表。
+
+参数 `error-symbol` 必须是一个错误符号——一个用 `define-error` 定义的符号。这就是Emacs Lisp如何对不同类型的错误进行分类的。有关错误符号、错误条件和条件名称的描述，请参阅错误符号和条件名称 Error Symbols and Condition Names。
+
+如果没有处理错误，则在打印错误消息时使用这两个参数。通常，该错误消息由 `error-symbol` 的 `error-message` 属性提供。如果data为非nil，则后面跟着冒号和逗号分隔的data未求值元素列表。对于错误，错误消息是数据的CAR(必须是字符串)。对文件错误 file-error 的子类 subcategories 别进行特殊处理。
+
+data 中对象的数量和重要性取决于错误符号 error-symbol。例如，如果类型参数错误 wrong-type-argument error，则列表中应该有两个对象:描述预期类型的谓词和不适合该类型的对象。
+
+error-symbol和data对于任何处理错误的错误处理程序都是可用的: `condition-case` 将一个局部变量绑定到一个 `(error-symbol . data)` 形式的列表。(参见编写代码处理错误 Writing Code to Handle Errors)。
+
+函数 signal 永远不会返回。如果error error-symbol 没有处理程序，并且 `noninteractive` 为非nil(请参阅批处理模式)，则此函数最终会终止Emacs。
+
+``` Elisp
+(signal 'wrong-number-of-arguments '(x y))
+;     error→ Wrong number of arguments: x, y
+
+(signal 'no-such-error '("My unknown error condition"))
+;     error→ peculiar error: "My unknown error condition"
+```
+
+#### 函数: `user-error format-string &rest args` ####
+
+这个函数的行为完全类似于error，除了它使用错误符号 `user-error` 而不是error。顾名思义，这是为了报告用户的错误，而不是代码本身的错误。例如，如果您尝试使用命令 `Info-history-back` (l)移回信息浏览历史记录的起始位置，Emacs将发出用户错误信号。这样的错误不会导致进入调试器，即使debug-on-error为非nil时也是如此。请参阅在出现错误时进入调试器 Entering the Debugger on an Error。
+
+> Common Lisp注意事项:Emacs Lisp不像公共Lisp那样有可持续性错误的概念。
+
+##### 11.7.3.2 How Emacs Processes Errors #####
+
+当发出错误信号时，signal 将为该错误搜索活动处理程序 active handler。处理程序是一个Lisp表达式序列，指定在Lisp程序的某个部分发生错误时执行。如果错误具有适用的处理程序，则执行该处理程序，并在处理程序之后恢复控制。处理程序在建立它的条件用例 condition-case 的环境中执行;在这种情况下调用的所有函数都已经退出，处理程序不能返回到它们。
+
+如果没有适用于错误的处理程序，则终止当前命令并将控制返回给编辑器命令循环 command loop。(命令循环有一个隐式处理各种错误的处理程序。)命令循环的处理程序使用错误符号和相关数据来打印错误消息。你可以使用变量 `command-error-function` 来控制这是如何完成的:
+
+###### 变量: `command-error-function` ######
+
+如果该变量为非nil，则指定一个函数用于处理将控制权返回给Emacs命令循环的错误。该函数应该有三个参数:
+
+1. `data`: 一个与condition-case绑定到其变量的形式相同的列表;
+2. `context`: 一个描述错误发生情况的字符串，或者(更常见的)nil;
+3. `caller`: 调用发出错误信号的原语的Lisp函数。
+
+没有显式处理程序的错误可以调用Lisp调试器(参见调用调试器 Invoking the Debugger)。如果变量 `debug-on-error`(请参阅在错误时进入调试器 Entering the Debugger on an Error)为非空，则启用调试器。与错误处理程序不同，调试器在发生错误的环境中运行，因此您可以精确地检查变量的值，就像它们在发生错误时的值一样。在批处理模式下(参见批处理模式 Batch Mode)，Emacs进程通常以非零退出状态退出。
+
+##### 11.7.3.3 Writing Code to Handle Errors #####
+
+发出错误信号的通常效果是终止正在运行的命令，并立即返回到Emacs编辑器命令循环。您可以通过建立一个带有特殊形式condition-case的错误处理程序来安排捕获在程序的某个部分中发生的错误。一个简单的例子如下:
+
+``` Elisp
+(condition-case nil
+    (delete-file filename)
+  (error nil))
+```
+
+这将删除名为filename的文件，捕获任何错误，并在发生错误时返回nil。(对于这种简单的情况，您可以使用宏`ignore-errors`;见下文)。
+
+`condition-case` 构造通常用于捕获可预测的错误，例如在调用 `insert-file-contents` 时未能打开文件。它还用于捕获完全不可预测的错误，例如当程序计算从用户读取的表达式时。
+
+`condition-case` 的第二个参数称为受保护形式 `protected form` 。(在上面的例子中，受保护的表单是对 `delete-file`的调用。)错误处理程序在此表单开始执行时生效，并在此表单返回时停用。它们在这期间一直有效。特别是，它们在此表单调用的函数执行期间、在其子例程中等等都有效。这是一件好事，因为严格来说，错误只能由受保护的形式调用的Lisp原语(包括signal和error)来表示，而不能由受保护的形式本身来表示。
+
+受保护表单后面的参数是处理程序。每个处理程序列出一个或多个条件名称(它们是符号)，以指定它将处理哪些错误。在发出错误信号时指定的错误符号还定义了一个条件名称列表。如果处理程序有任何共同的条件名称，则处理程序应用于错误。在上面的示例中，有一个处理程序，它指定了一个条件名称error，它涵盖了所有错误。
+
+搜索适用的处理程序将检查所有已建立的处理程序，从最近建立的处理程序开始。因此，如果两个嵌套的条件用例形式提供处理相同的错误，则两个条件用例的内部形式将处理该错误。
+
+如果错误由某种条件情况形式处理，这通常会阻止调试器运行，即使 `debug-on-error` 表示该错误应该调用调试器。
+
+如果希望能够调试由条件情况捕获的错误，请将变量 `debug-on-signal` 设置为非nil值。你也可以指定一个特定的处理程序应该让调试器先运行，通过在条件中写入debug，像这样:
+
+``` Elisp
+(condition-case nil
+    (delete-file filename)
+  ((debug error) nil))
+```
+
+这里调试的作用只是防止条件情况抑制对调试器的调用。任何给定的错误只有在错误调试和其他常用过滤机制认为应该这样做的情况下才会调用调试器。请参阅在出现错误时进入调试器 Entering the Debugger on an Error。
+
+###### 宏: `condition-case-unless-debug var protected-form handlers...` ######
+
+宏 `condition-case-unless-debug` 提供了另一种处理此类表单调试的方法。它的行为完全类似于condition-case，除非变量debug-on-error是非nil，在这种情况下，它根本不处理任何错误。
+
+一旦Emacs决定某个处理程序处理错误，它将控制权返回给该处理程序。要做到这一点，Emacs取消所有由退出的绑定构造所做的变量绑定，并执行所有退出的 `unwind-protect` 表单的清理。一旦控制到达处理程序，处理程序的主体就会正常执行。
+
+执行处理程序体之后，执行从条件情况形式返回。由于受保护的表单在处理程序执行之前完全退出，处理程序不能在出现错误时恢复执行，也不能检查在受保护表单中进行的变量绑定。它所能做的就是清理和继续。
+
+错误信号和处理与throw和catch有一些相似之处(参见显式非本地出口:catch和throw)，但它们是完全独立的设施。catch不能捕获错误，而throw不能由错误处理程序处理(尽管在没有合适的catch时使用throw表示可以处理错误)。
+
+###### 特殊形式: `condition-case var protected-form handlers...` ######
+
+这个特殊形式围绕 protected-form 的执行建立了错误处理程序。如果 protected-form 执行没有错误，它返回的值将成为条件情况表单的值(在没有成功处理程序的情况下;见下文)。在这种情况下，条件情况没有影响。当在 protected-form 期间发生错误时，condition-case 形式会产生影响。
+
+每个处理程序都是形式 `(conditions body...)` 的列表。这里的conditions是要处理的错误条件名称，或条件名称列表(其中可以包括debug，以允许调试器在处理程序之前运行)。条件名称 `t` 匹配任何条件。body是这个处理程序处理错误时要执行的一个或多个Lisp表达式。以下是处理程序的示例:
+
+``` Elisp
+(error nil)
+
+(arith-error (message "Division by zero"))
+
+((arith-error file-error)
+ (message
+  "Either division by zero or failuer to open a file"))
+```
+
+发生的每个错误都有一个错误符号，它描述了错误的类型，并且还描述了一个条件名称列表(参见错误符号和条件名称 Error Symbols and Condition Names)。Emacs搜索所有活动的 condition-case forms，寻找指定一个或多个条件名称的处理程序;最内层的匹配条件用例处理错误。在这种情况下，第一个适用的处理程序处理错误。
+
+在执行处理程序体之后，条件情况正常返回，使用处理程序体中最后一个表单的值作为总体值。
+
+参数var是一个变量。在执行 protected-form 时，condition-case 仅在处理错误时才绑定此变量。此时，它将var本地绑定到一个 error description，这是一个给出错误细节的列表。错误描述的形式为 `(error-symbol . data)`。处理程序可以参考这个列表来决定要做什么。例如，如果错误是由于打开文件失败，则文件名是数据的第二个元素——错误描述的第三个元素。
+
+如果var为nil，则意味着没有变量被绑定。然后错误符号和相关数据对处理程序不可用。
+
+作为一种特殊情况，其中一个处理程序可以是格式为 `(:success body...)` 的列表，其中body在执行时将 var (如果非nil)绑定到protected-form的返回值，当表达式无错误终止时。
+
+有时需要重新抛出一个被condition-case捕获的信号，以供某些外部处理程序捕获。以下是如何做到这一点:
+
+``` Elisp
+(signal (car err) (cdr err))
+```
+
+其中err是错误描述变量，是要重新抛出其错误条件的condition-case的第一个参数。参见信号的定义 Definition of signal。
+
+###### 函数: `error-message-string error-descriptior` ######
+
+这个函数返回给定错误描述符的错误消息字符串。如果您希望通过打印该错误的常见错误消息来处理错误，则此功能非常有用。参见信号的定义 Definition of signal。
+
+下面是一个使用条件用例处理除零所导致的错误的示例。处理程序显示错误消息(但没有哔哔声)，然后返回一个非常大的数字。
+
+``` Elisp
+(defun safe-divide (dividend divisor)
+  (condition-case err
+      ;; Protected form.
+	  (/ dividend divisor)
+
+    ;; The handler.
+	(arith-error                             ; Condition
+	 ;; Display the usual message for this error.
+	 (message "%s" (error-message-string err))
+	 1000000)))
+; safe-divide
+
+(safe-divide 5 0)
+;  1000000
+```
+
+处理程序指定条件名称 arith-error，以便它只处理除零错误。其他类型的错误将不被处理(在这种情况下)。因此:
+
+``` Elisp
+(safe-divide nil 3)
+;     error→ Wrong type argument: number-or-marker-p, nil
+```
+
+下面是一个捕获所有类型错误的条件用例，包括来自error的错误:
+
+``` Elisp
+(setq baz 34)
+     ⇒ 34
+
+(condition-case err
+    (if (eq baz 35)
+        t
+      ;; This is a call to the function error.
+      (error "Rats!  The variable %s was %s, not 35" 'baz baz))
+  ;; This is the handler; it is not a form.
+  (error (princ (format "The error was: %s" err))
+         2))
+-| The error was: (error "Rats!  The variable baz was 34, not 35")
+⇒ 2
+```
+
+###### 宏: `ignore-errors boody...` ######
+
+此构造执行body，忽略在执行过程中发生的任何错误。如果执行没有错误，则ignore-errors返回body中最后一个表单的值;否则，它返回nil。
+
+下面是本小节开头使用ignore-errors重写的示例:
+
+``` Elisp
+(ignore-errors
+  (delete-file filename))
+```
+
+###### 宏: `ignore-error condition body...` ######
+
+这个宏类似于ignore-errors，但只会忽略指定的特定错误条件。
+
+``` Elisp
+(ignore-error end-of-file
+  (read ""))
+;  nil
+```
+
+Condition也可以是错误条件的列表。
+
+###### 宏: `with-demoted-errors format body...` ######
+
+这个宏就像一个温和版本的忽略错误。它不是完全压制错误，而是将它们转换为消息。它使用字符串格式来格式化消息。格式应该包含一个 % 序列;例如，`"Error: %S"`。使用带有降级错误的代码，这些代码预计不会发出错误信号，但如果确实发生错误，应该是健壮的。注意，这个宏使用 `condition-case-unless-debug` 而不是 `condition-case`。
+
+##### 11.7.3.4 Error Symbols and Condition Names #####
+
+当您发出错误信号时，您可以指定一个错误符号来指定您所想到的错误类型。每个错误都有且只有一个错误符号来对其进行分类。这是Emacs Lisp语言定义的最好的错误分类。
+
+这些狭窄的分类被分组到称为错误条件的更广泛类的层次结构中，由条件名称标识。最狭窄的类属于错误符号本身:每个错误符号也是一个条件名称。对于更广泛的类也有条件名，直到条件名error，它接受所有类型的错误(但不退出)。因此，每个错误都有一个或多个条件名称:error，错误符号(如果与error不同)，可能还有一些中间分类。
+
+###### 函数: `define-error name message &optional parent` ######
+
+为了使一个符号成为错误符号，它必须用带有父条件(默认为error)的define-error来定义。这个父类定义了这种错误所属的条件。父类的传递集总是包含错误符号本身和符号error。因为退出不被认为是错误，所以quit的父类集合就是(quit)。
+
+除了它的父类之外，错误符号还有一个消息，该消息是一个字符串，当错误发出信号但不处理时打印出来。如果该消息无效，则使用错误消息 *奇特错误 peculiar error*。参见信号的定义 Definition of signal。
+
+在内部，父元素集存储在错误符号的 `error-conditions` 属性中，消息存储在错误符号的error-message属性中。
+
+下面是我们如何定义一个新的错误符号new-error:
+
+``` Elisp
+(define-error 'new-error "A new error" 'my-own-errors)
+;  "A new error"
+```
+
+此错误有几个条件名称:
+
+* `new-error`，最窄的分类;
+* `my-own-errors`，我们认为这是一个更广泛的分类;
+* 以及我自己的所有条件——错误应该包括 error，这是所有错误中最广泛的。
+
+错误字符串应该以大写字母开头，但不应该以句号结束。这是为了与Emacs的其余部分保持一致。
+
+当然，Emacs不会自己发出新错误信号;只有在代码中显式调用signal(参见signal的定义)才能做到这一点:
+
+``` Elisp
+(signal 'new-error '(x y))
+;     error→ A new error: x, y
+```
+
+这个错误可以通过它的任何条件名来处理。这个例子处理new-error和my-own-errors类中的任何其他错误:
+
+``` Elisp
+(condition-case foo
+    (bar nil t)
+  (my-own-errors nil))
+```
+
+对错误进行分类的重要方法是根据它们的条件名称进行分类——这些名称用于将错误与处理程序进行匹配。错误符号仅作为一种方便的方式来指定预期的错误消息和条件名称列表。给signal一个条件名称列表而不是一个错误符号会很麻烦。
+
+相比之下，只使用错误符号而不使用条件名称将严重降低条件大小写的功能。在编写错误处理程序时，条件名可以根据不同的通用性级别对错误进行分类。仅使用错误符号就可以排除除最窄级别以外的所有分类。
+
+有关主要错误符号及其条件的列表，请参阅标准错误 Standard Errors。
+
 #### 11.7.4 Cleaning Up from Nonlocal Exits ####
 
+当您临时将数据结构置于不一致状态时，`unwind-protect` 结构是必需的;它允许您在发生错误或抛出时使数据再次保持一致。(另一个更具体的清理构造是原子更改组，它只用于缓冲区内容的更改;原子变化组 Atomic Change Groups。)
+
+##### 特殊形式: `unwind-protect body-form cleanup-forms...` #####
+
+`unwind-protect` 执行 `body-form` ，并保证如果控制离开body-form，无论如何发生，都将对 `cleanup-form` 进行运算。body-form 可以正常完成，也可以在 unwind-protect 外执行 throw 动作，也可以出现 error;在所有情况下，cleanup-forms 都将被运算。
+
+如果body-form正常完成，则unwind-protect在计算清理表单后返回body-form的值。如果形体未完成，unwind-protect不返回任何正常意义上的值。
+
+只有形体受到unwind-protect的保护。如果任何 cleanup-forms 本身非本地退出(通过抛出或错误)，则不保证unwind-protect会评估其余的清理表单。如果某个清理表单的失败有可能导致问题，那么使用围绕该表单的另一个unwind保护来保护它。
+
+例如，这里我们创建了一个临时使用的不可见缓冲区，并确保在完成之前杀死它:
+
+``` Elisp
+(let ((buffer (get-buffer-create " *temp*")))
+  (with-current-buffer buffer
+    (unwind-protect
+	    body-form
+	  (kill-buffer buffer))))
+```
+
+您可能会认为我们可以直接写入(kill-buffer (current-buffer))并省略变量buffer。但是，如果body-form碰巧在切换到不同的缓冲区后出现错误，那么上面显示的方法更安全!(或者，您可以在body-form周围编写save-current-buffer，以确保临时缓冲区能够及时恢复为当前以终止它。)
+
+Emacs包含一个名为 `with-temp-buffer` 的标准宏，它可以扩展成以上所示的代码(参见Current Buffer)。本手册中定义的几个宏以这种方式使用 `unwind-protect`。
+
+下面是一个来自FTP包的实际示例。它创建一个进程(请参阅进程 Processes)来尝试建立到远程计算机的连接。由于 `ftp-login` 函数极易受到函数编写者无法预料的许多问题的影响，因此使用了一种表单来保护它，以保证在发生故障时删除该进程。否则，Emacs可能会被无用的子进程填满。
+
+``` Elisp
+(let ((win nil))
+  (unwind-protect
+      (progn
+	    (setq process (ftp-setup-buffer host file))
+		(if (setq win (ftp-login process host user password))
+		    (message "Logged in")
+		  (error "Ftp login failed")))
+    (or win (and process (delete-process)))))
+```
+
+这个例子有一个小错误:如果用户输入C-g来退出，并且退出发生在ftp-setup-buffer函数返回之后，但在设置变量process之前，进程不会被杀死。没有简单的方法来修复这个bug，但至少不太可能。
 
 ---
 
