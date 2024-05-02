@@ -10429,30 +10429,1018 @@ $ EMACS_DYNVARS_FILE=~/my-dynvars make    # perform checks
 
 [Introduction to Buffer-Local Variables](https://www.gnu.org/software/emacs/manual/html_node/elisp/Intro-to-Buffer_002dLocal.html)
 
+缓冲区局部变量具有与特定缓冲区关联的缓冲区局部绑定。当缓冲区为当前时，绑定生效;否则，它不生效。如果在缓冲区本地绑定生效时设置变量，则新值将进入该绑定，因此它的其他绑定保持不变。这意味着更改仅在您进行更改的缓冲区中可见。
+
+变量的 *普通绑定 ordinary binding* (不与任何特定缓冲区关联)称为 *默认绑定 default binding*。在大多数情况下，这是*全局绑定 global binding*。
+
+变量可以在某些缓冲区中具有缓冲区本地绑定，但在其他缓冲区中不具有。默认绑定由所有没有自己的变量绑定的缓冲区共享。(这包括所有新创建的缓冲区。)如果在没有缓冲区本地绑定的缓冲区中设置变量，则会设置默认绑定，因此新值在所有看到默认绑定的缓冲区中可见。
+
+缓冲区本地绑定最常见的用途是让主要模式更改控制命令行为的变量。例如，C模式和Lisp模式都设置了变量paragraph-start，以指定只有空行分隔段落。它们通过在要进入C模式或Lisp模式的缓冲区中设置变量buffer-local，然后将其设置为该模式的新值来实现这一点。参见主要模式 Major Modes。
+
+创建缓冲区本地绑定的常用方法是使用 `make-local-variable`，这是主模式命令通常使用的方法。这只影响当前缓冲区;所有其他缓冲区(包括尚未创建的缓冲区)将继续共享默认值，除非显式地为它们提供自己的缓冲区本地绑定。
+
+一个更强大的操作是通过调用 `make-variable-buffer-local` 将变量自动标记为buffer-local。您可以将其视为在所有缓冲区(甚至是尚未创建的缓冲区)中使变量本地化。更准确地说，设置变量的效果是，如果变量还不是当前缓冲区的局部变量，则会自动使其成为当前缓冲区的局部变量。所有缓冲区开始时都像往常一样共享变量的默认值，但是设置变量会为当前缓冲区创建一个缓冲区本地绑定。新值存储在缓冲区本地绑定中，而不改变默认绑定。这意味着默认值不能在任何缓冲区中使用setq更改;改变它的唯一方法是使用 `setq-default`。
+
+> 警告:当一个变量在一个或多个缓冲区中具有缓冲区局部绑定时，让它重新绑定当前有效的绑定。例如，如果当前缓冲区有一个buffer-local值，让它临时重新绑定。如果没有有效的缓冲区本地绑定，让它重新绑定默认值。如果在let中更改到另一个当前缓冲区，其中生效的绑定不同，则不会再看到let绑定。如果在另一个缓冲区中退出let，则不会看到解除绑定发生(尽管它会正确地发生)。这里有一个例子来说明:
+
+``` Elisp
+(setq foo 'g)
+(set-buffer "a")
+(make-local-variable 'foo)
+
+(setq foo 'a)
+(let ((foo 'temp))
+  ;; foo ⇒ 'temp  ; let binding in buffer ‘a’
+  (set-buffer "b")
+  ;; foo ⇒ 'g     ; the global value since foo is not local in ‘b’
+  body…)
+
+foo ⇒ 'g        ; exiting restored the local value in buffer ‘a’,
+                 ; but we don’t see that in buffer ‘b’
+
+(set-buffer "a") ; verify the local value was restored
+foo ⇒ 'a
+```
+
+注意，在body中对foo的引用访问缓冲区 b 的buffer-local绑定。
+
+当文件指定局部变量值时，当您访问该文件时，这些值将成为缓冲区本地值。参见《GNU Emacs手册》中的文件变量 File Variables。
+
+不能将buffer-local变量设置为terminal-local(参见多终端 Multiple Terminals)。
+
 #### 12.11.2 Creating and Deleting Buffer-Local Bindings ####
+
+##### 命令: `make-local-variable variabel` #####
+
+这个函数在当前缓冲区中为变量(符号)创建一个缓冲区局部绑定。其他缓冲区不受影响。返回的值是可变的。
+
+变量的 buffer-local 值开始时与先前的值相同。如果变量是空的，它仍然是空的。
+
+``` Elisp
+;; In buffer ‘b1’:
+(setq foo 5)                ; Affects all buffers.
+     ⇒ 5
+
+(make-local-variable 'foo)  ; Now it is local in ‘b1’.
+     ⇒ foo
+
+foo                         ; That did not change
+     ⇒ 5                   ;   the value.
+
+(setq foo 6)                ; Change the value
+     ⇒ 6                   ;   in ‘b1’.
+
+foo
+     ⇒ 6
+
+
+;; In buffer ‘b2’, the value hasn’t changed.
+(with-current-buffer "b2"
+  foo)
+     ⇒ 5
+```
+
+在变量的let绑定中将变量设置为buffer-local并不能可靠地工作，除非您执行此操作的缓冲区在进入或退出let时不是当前的。这是因为let不区分不同类型的绑定;它只知道绑定的对象是哪个变量。
+
+将常量或只读变量设置为buffer-local是错误的。参见永远不变的变量 Variables that Never Change。
+
+如果变量是终端本地的(参见多终端 Multiple Terminals)，这个函数会发出错误信号。这样的变量也不能具有缓冲区本地绑定。
+
+> 警告:不要对 **钩子变量** 使用 `make-local-variable`。如果您使用local参数 `add-hook` 或 `remove-hook`，则根据需要自动将钩子变量设置为buffer-local。
+
+##### 宏: `setq-local &rest pairs` #####
+
+`pairs` 是 变量和值对 的列表。这个宏在当前缓冲区中为每个变量创建一个缓冲区本地绑定，并为它们提供一个缓冲区本地值。它相当于对每个变量调用 `make-local-variable`，然后调用 `setq`。变量应该是 unquoted 的符号。
+
+``` Elisp
+(setq-local var1 "value1"
+            var2 "value2")
+```
+
+##### 命令: `make-variable-buffer-local variable` #####
+
+这个函数将 variable (一个符号)自动标记为 buffer-local，因此任何后续尝试设置它都会使其在当前缓冲区中本地。与 `make-local-variable` 不同的是，这是无法撤消的，并且会影响变量在所有缓冲区中的行为。
+
+这个特性的一个特殊之处在于绑定变量(使用let或其他绑定构造)不会为它创建缓冲区局部绑定。只有设置变量(使用set或setq)，而变量没有在当前缓冲区中进行的let风格的绑定，才会这样做。
+
+如果变量没有默认值，那么调用该命令将给它一个默认值nil。如果变量已经有默认值，则该值保持不变。随后在变量上调用 `makunbound` 将导致缓冲区本地值为空，而默认值不受影响。
+
+返回的值是 variable。
+
+将常量或只读变量设置为buffer-local是错误的。参见永远不变的变量 Variables that Never Change。
+
+> 警告:不要认为应该对用户选项变量使用 `make-variable-buffer-local`，因为用户可能希望在不同的缓冲区中对它们进行不同的定制。用户可以将任何变量设置为本地，只要他们愿意。最好让他们自己选择。
+
+使用 `make-variable-buffer-local` 的时机是在没有两个缓冲区共享相同绑定的情况下。例如，当一个变量在Lisp程序中用于内部目的时，它依赖于在单独的缓冲区中有单独的值，那么使用 `make-variable-buffer-local` 可能是最好的解决方案。
+
+##### 宏: `defvar-local variable value &optional docstring` #####
+
+这个宏将变量定义为具有初始值 value 和 docstring 的变量，并将其标记为自动 buffer-local。它相当于调用defvar，然后调用make-variable-buffer-local。变量应该是不加引号的符号。
+
+##### 函数: `local-variable-p variable &optional buffer` #####
+
+如果变量是buffer buffer中的buffer-local(默认为当前缓冲区)，则返回t;否则,nil。
+
+##### 函数: `local-variable-if-set-p variable &optional buffer` #####
+
+如果变量在buffer buffer中具有 buffer-local 值，或者自动为buffer-local，则返回t。否则，它返回nil。如果省略或为nil，则buffer默认为当前缓冲区。
+
+##### 函数: `buffer-local-variable variable buffer` #####
+
+这个函数返回buffer buffer中变量(符号)的buffer-local绑定。如果variable在buffer buffer中没有buffer-local绑定，它将返回variable的默认值(参见buffer-local变量的默认值 The Default Value of a Buffer-Local Variable)。
+
+##### 函数: `buffer-local-boundp variable buffer` #####
+
+如果在buffer buffer中存在变量(符号)的缓冲区局部绑定，或者变量具有全局绑定，则返回非nil。
+
+##### 函数: `buffer-local-variables &optional buffer` #####
+
+这个函数返回一个描述buffer buffer中 buffer-local变量的列表。(如果省略buffer，则使用当前缓冲区。)通常，每个列表元素的形式为 `(sym . val)`，其中sym是缓冲局部变量(符号)，Val是它的缓冲局部值。但是当一个变量在buffer中的buffer-local绑定为空时，它的list元素就是sym。
+
+``` Elisp
+(make-local-variable 'foobar)
+(makunbound 'foobar)
+(make-local-variable 'bind-me)
+(setq bind-me 69)
+
+(setq lcl (buffer-local-variables))
+    ;; First, built-in variables local in all buffers:
+⇒ ((mark-active . nil)
+    (buffer-undo-list . nil)
+    (mode-name . "Fundamental")
+    …
+
+    ;; Next, non-built-in buffer-local variables.
+    ;; This one is buffer-local and void:
+    foobar
+    ;; This one is buffer-local and nonvoid:
+    (bind-me . 69))
+```
+
+请注意，将新值存储到此列表中cons单元格的cdr中不会更改变量的缓冲区本地值。
+
+##### 命令: `kill-local-variable variable` #####
+
+这个函数删除当前缓冲区中变量(符号)的缓冲区本地绑定(如果有的话)。因此，变量的默认绑定在此缓冲区中变得可见。这通常会导致变量的值发生变化，因为默认值通常不同于刚刚消除的buffer-local值。
+
+如果您终止一个变量的buffer-local绑定(该变量在设置时自动变为buffer-local)，则会使默认值在当前缓冲区中可见。但是，如果您再次设置变量，将再次为它创建一个缓冲区本地绑定。
+
+kill-local-variable 返回 variable。
+
+这个函数是一个命令，因为有时交互式地终止一个缓冲区局部变量很有用，就像交互式地创建缓冲区局部变量很有用一样。
+
+##### 函数: `kill-all-local-variables &optional kill-permanent` #####
+
+此函数消除当前缓冲区的所有缓冲区局部变量绑定。因此，缓冲区将看到大多数变量的默认值。默认情况下，对于具有非空permanent-local-hook属性(参见设置钩子 Setting Hooks)的标记为永久和局部钩子函数的变量不会被杀死，但如果可选的kill-permanent参数是非空的，即使这些变量也会被杀死。
+
+此函数还重置与缓冲区有关的某些其他信息:它将本地keymap设置为nil，将语法表设置为(standard-syntax-table)的值，将大小写表设置为(standard-case-table)，将缩写表设置为fundamental-mode-abbrev-table的值。
+
+这个函数做的第一件事就是运行普通钩子change-major-mode-hook(见下文)。
+
+每个主要模式命令都以调用这个函数开始，它的作用是切换到基本模式并消除前一个主要模式的大部分效果。为了确保它的工作，主要模式设置的变量不应该被标记为永久的。
+
+kill-all-local-variables 返回 nil. 
+
+##### 变量: `change-major-mode-hook` #####
+
+kill-all-local-variables 函数在执行其他操作之前运行这个普通钩子。这为主模式提供了一种方法，以便在用户切换到不同的主模式时安排一些特殊的事情。它对于缓冲区特定的次要模式也很有用，如果用户更改主模式，则应该忘记这些模式。
+
+为了获得最佳效果，将此变量设置为缓冲区局部，以便它在完成其工作后消失，并且不会干扰后续的主模式。看到钩子 Hooks。
+
+如果变量名(符号)具有非nil的永久局部属性，则缓冲局部变量是永久性的。这些变量不受kill-all-local-variables的影响，因此它们的局部绑定不会通过更改主模式来清除。永久局部变量适用于与文件来自何处或如何保存有关的数据，而不适用于如何编辑内容。
 
 #### 12.11.3 The Default Value of a Buffer-Local Variable ####
 
+具有缓冲区本地绑定的变量的全局值也称为默认值，因为当前缓冲区和所选帧都没有自己的变量绑定时，该值才会生效。
+
+无论当前缓冲区是否具有缓冲区本地绑定，函数default-value和setq-default都可以访问和更改变量的默认值。例如，你可以使用setq-default来改变大多数缓冲区的paragraph-start的默认设置;即使在C或Lisp模式缓冲区中，该变量具有缓冲区局部值，这也会起作用。
+
+特殊形式defvar和defconst也设置默认值(如果它们设置了变量的话)，而不是任何缓冲区本地值。
+
+##### 函数: `default-value symbol` #####
+
+这个函数返回symbol的默认值。这是在 buffer 和 frame 中看到的值，这些缓冲区和帧没有自己的值。如果symbol不是缓冲区本地的，这相当于symbol-value(参见访问变量值)。
+
+##### 函数: `default-boundp symbol` #####
+
+函数 `default-boundp` 告诉你symbol的默认值是否为nonvoid。如果(default-boundp 'foo)返回nil，那么(default-value 'foo)将得到一个错误。
+
+`default-boundp` 对应于 default-valuec，正如 `boundp` 对应于 `symbol-value` 一样。
+
+##### 特殊形式: `setq-default [symbol form]...` #####
+
+这个特殊的形式给每个符号一个新的默认值，这是计算相应形式的结果。它不评价符号，但评价形式。setq-default表单的值是最后一个表单的值。
+
+如果一个符号不是当前缓冲区的buffer-local，并且没有被自动标记为buffer-local, setq-default具有与setq相同的效果。如果symbol是当前缓冲区的buffer-local，那么这会改变其他缓冲区将看到的值(只要它们没有buffer-local值)，但不会改变当前缓冲区看到的值。
+
+``` Elisp
+;; In buffer ‘foo’:
+(make-local-variable 'buffer-local)
+     ⇒ buffer-local
+
+(setq buffer-local 'value-in-foo)
+     ⇒ value-in-foo
+
+(setq-default buffer-local 'new-default)
+     ⇒ new-default
+
+buffer-local
+     ⇒ value-in-foo
+
+(default-value 'buffer-local)
+     ⇒ new-default
+
+
+;; In (the new) buffer ‘bar’:
+buffer-local
+     ⇒ new-default
+
+(default-value 'buffer-local)
+     ⇒ new-default
+
+(setq buffer-local 'another-default)
+     ⇒ another-default
+
+(default-value 'buffer-local)
+     ⇒ another-default
+
+
+;; Back in buffer ‘foo’:
+buffer-local
+     ⇒ value-in-foo
+(default-value 'buffer-local)
+     ⇒ another-default
+```
+
+##### 函数: `set-default symbol value` #####
+
+这个函数类似于setq-default，只不过符号是一个普通的求值参数。
+
+``` Elisp
+(set-default (car '(a b c)) 23)
+     ⇒ 23
+
+(default-value 'a)
+     ⇒ 23
+```
+
+一个变量可以被 `let-bound` 绑定到一个值(参见局部变量Local Variables)。这使得它的全局值被绑定遮蔽; default-value将返回该绑定的值，而不是全局值， `set-default` 将被阻止设置全局值(它将更改let-bound值)。下面两个函数允许引用全局值，即使它被let绑定遮蔽。
+
+##### 函数: `default-toplevel-value symbol` #####
+
+这个函数返回symbol的顶级默认值，这是它在任何let绑定之外的值。
+
+``` Elisp
+(defvar variable 'global-value)
+    ⇒ variable
+
+(let ((variable 'let-binding))
+  (default-value 'variable))
+    ⇒ let-binding
+
+(let ((variable 'let-binding))
+  (default-toplevel-value 'variable))
+    ⇒ global-value
+```
+
+##### 函数: `set-default-toplevel-value symbol value` #####
+
+此函数将符号的顶级默认值设置为指定值。当你想设置symbol的全局值，而不管你的代码是否在symbol的let-binding上下文中运行时，这就派上用场了。
+
 ### 12.12 File Local Variables ###
+
+文件可以指定局部变量值;Emacs使用它们为访问该文件的缓冲区中的变量创建缓冲区本地绑定。有关文件局部变量的基本信息，请参阅《GNU Emacs手册》中的文件局部变量。本节介绍影响如何处理文件局部变量的函数和变量。
+
+``` Elisp
+;; -*- global-display-line-numbers-mode: 1; -*-
+```
+
+如果文件局部变量可以指定稍后将调用的任意函数或Lisp表达式，则访问文件可能会占用您的Emacs。Emacs通过只自动设置那些已知其指定值是安全的文件本地变量来防止这种情况。只有在用户同意的情况下才设置其他文件局部变量。
+
+为了额外的安全性，当Emacs读取文件局部变量时，read-circle被临时绑定为nil(参见输入函数 Input Functions)。这将阻止Lisp阅读器识别循环和共享Lisp结构(参见循环对象的读取语法 Read Syntax for Circular Objects)。
+
+#### 用户选项: `enable-local-variables` ####
+
+该变量控制是否处理文件局部变量。可能的值是:
+
+* `t` 设置安全变量，并查询query(一次)任何不安全变量。
+* `:safe` 只设置安全变量，不查询。
+* `:all` 设置所有变量，不查询。
+* `nil`: 不设置任何变量
+* 其他: 查询所有变量(一次)。
+
+#### 变量: `inhibit-local-variables-regexps` ####
+
+这是一个正则表达式列表。如果文件的名称与此列表中的元素匹配，则不会扫描它以查找任何形式的文件局部变量。有关为什么要使用这种模式的示例，请参见Emacs如何选择主模式 How Emacs Chooses a major Mode。
+
+#### 变量: `permanently-enabled-local-variables` ####
+
+默认情况下，即使 `enable-local-variables` 为nil，也需要一些局部变量设置。默认情况下，这种情况仅适用于词法绑定局部变量设置，但可以通过使用该变量来控制，该变量是一个符号列表。
+
+#### 函数: `hack-local-variables &optional handle-mode` ####
+
+该函数解析、绑定或计算由当前缓冲区的内容指定的任何局部变量。变量 `enable-local-variables` 在这里起作用。但是，这个函数不会在 ` -*- ` 行中查找 `mode:` 局部变量。`set-auto-mode` 做到了这一点，同时也考虑了enable-local-variables(参见Emacs如何选择主模式 How Emacs Chooses a Major Mode)。
+
+这个函数的工作原理是遍历存储在 `file-local-variables-list` 中的列表，并依次应用每个局部变量。它分别在应用变量之前和之后调用 `before-hack-local-variables-hook` 和 `hack-local-variables-hook`。它只在列表非nil时调用before-hook;它总是调用另一个钩子。如果 mode 元素指定的主模式与缓冲区已有的主模式相同，则该函数将忽略该元素。
+
+如果可选参数 `handle-mode` 是 t，那么这个函数所做的就是返回一个指定主模式的符号，如果 `-*-` 行或局部变量列表指定了一个，否则返回nil。它不设置模式或任何其他文件本地变量。如果 `handle-mode` 的值不是nil或t，则忽略 `-*-` 行或局部变量列表中 mode 的任何设置，并应用其他设置。如果 `handle-mode` 为nil，则设置所有文件局部变量。
+
+#### 变量: `file-local-variables-alist` ####
+
+这个buffer-local变量保存了文件本地变量设置列表。列表中的每个元素的形式为 `(var . value)` 其中var是局部变量的符号，Value是它的值。当Emacs访问一个文件时，它首先将所有的文件局部变量收集到这个列表中，然后 `hack-local-variables` 函数逐个应用它们。
+
+#### 变量: `before-hack-local-variables-hook` ####
+
+在应用存储在 `file-local-variables-list` 中的 file-local 变量之前，Emacs会立即调用这个钩子。
+
+#### 变量: `hack-local-variables-hook` ####
+
+Emacs在应用完存储在 `file-local-variables-list` 中的文件局部变量后立即调用这个钩子。
+
+可以使用 `safe-local-variable` 属性为变量指定安全值。这个属性必须是一个参数的函数;如果函数返回给定值的非空值，则任何值都是安全的。许多常见的文件变量都有安全的局部变量属性;这些模式包括 `fill-column`、`fill-prefix` 和 `indent-tabs-mode`。对于安全的布尔值变量，使用 `booleanp` 作为属性值。
+
+如果您想为C源代码中定义的变量定义安全局部变量属性，请将这些变量的名称和属性添加到 `files.el` 的 *安全局部变量 Safe local variables* 部分中的列表中。
+
+当使用 `defcustom` 定义用户选项时，您可以通过向 `defcustom` 添加参数 `:safe function` 来设置其 `safe-local-variable` 属性(参见定义自定义变量Defining Customization Variables)。然而，使用 `:safe` 定义的安全谓词只有在包含该定义的包被加载时才会被知道，而这通常为时已晚。作为一种替代方法，你可以使用 *autolload cookie* (参见autolload)为该选项分配其安全谓词，如下所示:
+
+``` Elisp
+;;;###autoload (put 'var 'safe-local-variable 'pred)
+```
+
+用autolload指定的安全值定义被复制到包的autolload文件(loaddefs)中。(对于大多数与Emacs捆绑在一起的包)，并且从会话开始就为Emacs所知。
+
+#### 用户选项: `safe-local-variable-values` ####
+
+该变量提供了另一种将某些变量值标记为安全的方法。它是一个cons单元格列表 `(var . val)`，其中var是变量名，val是该变量的安全值。
+
+当Emacs询问用户是否遵守一组文件本地变量规范时，用户可以选择将它们标记为安全。这样做会将这些变量/值对添加到safe-local-variable-values中，并将其保存到用户的自定义文件中。
+
+#### 用户选项: `ignore-local-variable-values` ####
+
+如果您总是希望完全忽略某些特定局部变量的值，则可以使用此变量。其值的形式与 `safe-local-variable-values` 相同;在处理文件指定的局部变量时，将始终忽略为列表中出现的值的文件局部变量。与该变量一样，当Emacs询问用户是否遵守文件局部变量时，用户可以选择永久忽略它们的特定值，这将改变该变量并将其保存到用户的自定义文件中。在此变量中出现的变量值对优先于在 `safe-local-variable-values` 中出现的相同对。
+
+#### 函数: `safe-local-variable-p sym val` ####
+
+如果根据上述条件给sym值val是安全的，则此函数返回非nil。
+
+有些变量被认为有风险。如果一个变量有风险，它永远不会被自动输入到 `safe-local-variable-values` 中;Emacs总是在设置有风险的变量之前进行查询，除非用户通过直接自定义 `safe-local-variable-values` 显式地允许一个值。
+
+任何具有非nil的 `risk-local-variable` 属性的变量都被认为是有风险的。当您使用 `defcustom` 定义用户选项时，您可以通过向 `defcustom` 添加参数 `:risky value` 来设置其 `risky-local-variable` 属性(参见定义自定义变量 Defining Customization Variables)。此外，任何以 `-command`、`-frame-alist`、`-function`、`-functions`、`-hook`、`-hooks`、`-form`、`-forms`、`-map`、`-map-alist`、`-mode-alist`、`-program`或`-predicate`结尾的变量都会被自动认为是有风险的。变量 `font-lock-keywords` 、`font-lock-keywords` 后面跟着一个数字，以及 `font-lock-syntactic-keywords` 也被认为是有风险的。
+
+#### 函数: `risky-local-variable-p sym` ####
+
+如果sym是一个有风险的变量，根据上述条件，这个函数返回非nil。
+
+#### 变量: `ignored-local-variables` ####
+
+这个变量保存了一个变量列表，这些变量不应该被文件赋予局部值。为其中一个变量指定的任何值都将被完全忽略。
+
+`Eval:` variable 也是一个潜在的漏洞，因此Emacs通常在处理它之前要求确认。
+
+#### 用户选项: `enable-local-eval` ####
+
+该变量控制 `-*-` 行中 `Eval:` 的处理或访问文件中的局部变量列表。值t表示无条件地处理它们; nil表示忽略它们;其他任何情况都意味着询问用户对每个文件做什么。默认值是 `maybe`。
+
+#### 用户选项: `safe-local-eval-forms` ####
+
+该变量保存了一个表达式列表，当在文件局部变量列表中的 `Eval:` variable 中找到时，可以安全地求值。
+
+如果表达式是函数调用，并且函数具有 `safety-local-eval-function` 属性，则该属性值确定表达式是否可以安全求值。属性值可以是一个用来测试表达式的谓词，也可以是一个这样的谓词列表(如果任何谓词成功，则是安全的)，或者是t(只要参数是常量，则总是安全的)。
+
+Text properties 文本属性也是潜在的漏洞，因为它们的值可能包含要调用的函数。因此，Emacs将从为文件局部变量指定的字符串值中丢弃所有文本属性。
 
 ### 12.13 Directory Local Variables ###
 
+目录可以指定该目录中所有文件通用的本地变量值;Emacs使用它们为访问该目录中任何文件的缓冲区中的变量创建缓冲区本地绑定。当目录中的文件属于某个项目，因此共享相同的本地变量时，这很有用。
+
+有两种不同的方法可以指定目录局部变量:
+
+1. 将它们放在一个特殊的文件中
+2. 为该目录定义一个项目类 project class。
+
+#### 常量: `dir-locals-file` ####
+
+这个常量是Emacs希望在其中找到目录本地变量的文件名。文件名为 `.dir-locals.el`。目录中同名的文件会导致Emacs将其设置应用于该目录或其子目录中的任何文件(可选地，您可以排除子目录;见下文)。如果某些子目录有自己的.dir-locals。Emacs使用从文件目录开始并沿着目录树向上移动的最深处的文件中的设置。该常量还用于派生第二个dir-locals文件 `.dir-locals-2.el` 的名称。如果存在第二个dir-locals文件，那么除了加载.dir-locals.el之外，还会加载这个文件。这在 `.dir-locals` 共享存储库中不能用于个人定制, 受版本控制中很有用。该文件将局部变量指定为特殊格式的列表;有关详细信息，请参阅《GNU Emacs手册》中的每目录本地变量 Per-directory Local Variables。
+
+[Per-Directory Local Variables](https://www.gnu.org/software/emacs/manual/html_node/emacs/Directory-Variables.html#Directory-Variables)
+
+#### 函数: `hack-dir-local-variables` ####
+
+这个函数读取 `.dir-locals.el` 并将目录本地变量存储在 `file-local-variables-alist` 中，该列表对于访问目录中的任何文件的缓冲区来说是本地的，而不应用它们。它还将目录本地设置存储在 `dir-locals-class-alist`中，它为 `.dir-locals.el` 所在的目录定义了一个特殊的类。该函数通过调用 `dir-locals-set-class-variables` 和 `dir-locals-set-directory-class` 来工作，如下所述。
+
+#### 函数: `hack-dir-local-variables-non-file-buffer` ####
+
+这个函数查找目录本地变量，并立即将它们应用到当前缓冲区中。它旨在在非文件缓冲区(如Dired缓冲区)的mode命令中调用，以使它们服从目录本地变量设置。对于非文件缓冲区，Emacs在default-directory及其父目录中查找目录本地变量。
+
+#### 函数: `dir-locals-set-class-variables class variables` ####
+
+这个函数为 named `class` 定义了一组变量设置，它是一个符号。稍后可以将该类分配给一个或多个目录，Emacs将把这些变量设置应用于这些目录中的所有文件。变量列表可以是以下两种形式之一
+
+1. `(major-mode . alist)`
+2. `(directory . list)`
+
+对于第一种形式，如果文件的缓冲区打开了一个从major-mode派生的模式，那么关联列表中的所有变量都被应用; `alist` 的格式应该是 `(name . value)`。major-mode的特殊值nil表示该设置适用于任何模式。在列表中，您可以使用一个特殊的名称: `subdirs`。如果关联值为nil，则该列表仅应用于相关目录下的文件，而不应用于任何子目录下的文件。
+
+对于第二种形式的变量，如果directory是文件目录的初始子字符串，那么list将按照上述规则递归应用; list应该是这个函数在变量中接受的两种形式之一。
+
+#### 函数: `dir-locals-set-directory-class directory class &optional mtime` ####
+
+这个函数为目录及其子目录中的所有文件分配 `class`。此后，为 `class` 指定的所有变量设置将应用于directory及其子目录中的任何访问文件。类必须已经由 `dir-locals-set-class-variables` 定义。
+
+Emacs在从 `.dir-locals.el` 加载目录变量时在内部使用这个函数。在这种情况下，可选参数 `mtime` 保存文件修改时间 (由 `file-attributes` 返回)。Emacs使用这段时间检查存储的局部变量是否仍然有效。如果你直接赋值一个类，而不是通过文件赋值，这个参数应该是nil。
+
+#### 变量: `dir-locals-class-alist` ####
+
+这个 alist 包含类符号和相关的变量设置。它由 `dir-locals-set-class-variables` 更新。
+
+#### 变量: `dir-locals-directory-cache` ####
+
+这个列表包含目录名、它们分配的类名以及关联目录局部变量文件的修改时间(如果有的话)。`dir-locals-set-directory-class` 函数更新这个列表。
+
+#### 变量: `enable-dir-local-variables` ####
+
+如果为nil，则忽略目录本地变量。这个变量对于想要忽略目录本地变量而仍然尊重文件本地变量的模式可能很有用(参见文件本地变量)。
+
 ### 12.14 Connection Local Variables ###
+
+Connection-local variables 为远程连接缓冲区中的不同变量设置提供了一种通用机制(请参阅《GNU Emacs手册》中的远程文件 Remove Files)。它们的绑定和设置取决于缓冲区专用于的远程连接。
+
+* Connection Local Profiles
+* Applying Connection Local Variables
+
+#### 12.14.1 Connection Local Profiles ####
+
+Emacs使用连接本地配置文件来存储应用于特定连接的变量设置。然后，您可以使用 `connection-local-set-profiles` 定义应用这些连接的条件，从而将它们与远程连接关联起来。
+
+##### 函数: `connection-local-set-profile-variables profile variables` #####
+
+这个函数为连接配置文件定义了一组变量设置，它是一个符号。稍后可以将连接配置文件分配给一个或多个远程连接，Emacs将把这些变量设置应用于这些连接的所有进程缓冲区。变量中的 alist 形式为 `(name . valuie)`。例子:
+
+``` Elisp
+(connection-local-set-profile-variables
+  'remote-bash
+  '((shell-file-name . "/bin/bash")
+    (shell-command-switch . "-c")
+    (shell-interactive-switch . "-i")
+    (shell-login-switch . "-l")))
+
+
+(connection-local-set-profile-variables
+  'remote-ksh
+  '((shell-file-name . "/bin/ksh")
+    (shell-command-switch . "-c")
+    (shell-interactive-switch . "-i")
+    (shell-login-switch . "-l")))
+
+
+(connection-local-set-profile-variables
+  'remote-null-device
+  '((null-device . "/dev/null")))
+```
+
+如果希望将变量设置附加到现有配置文件中，可以使用 `connection-local-get-profile-variables` 函数来检索现有设置，例如
+
+``` Elisp
+(connection-local-set-profile-variables
+  'remote-bash
+  (append
+   (connection-local-get-profile-variables 'remote-bash)
+   '((shell-command-dont-erase-buffer . t))))
+```
+
+##### 用户选项: `connection-local-profile-alist` #####
+
+该 alist 包含连接配置文件符号和相关的变量设置。它由 `connection-local-set-profile-variables` 更新。
+
+##### 函数: `connection-local-set-profiles criteria &rest profiles` #####
+
+该函数将配置文件 profiles (即符号)分配给由标准 `criteria` 标识的所有远程连接。`criteria`是标识连接和使用该连接的应用程序的列表 plist。属性名可以是 `:application`、`:protocol`、`:user` 和 `:machine`。application的属性值是一个符号，所有其他属性值都是字符串。所有属性都是可选的;如果criteria为nil，则始终适用。例子:
+
+``` Elisp
+(connection-local-set-profiles
+  '(:application tramp :protocol "ssh" :machine "localhost")
+  'remote-bash 'remote-null-device)
+
+
+(connection-local-set-profiles
+  '(:application tramp :protocol "sudo"
+    :user "root" :machine "localhost")
+  'remote-ksh 'remote-null-device)
+```
+
+如果criteria为nil，则适用于所有远程连接。因此，上面的例子等价于
+
+``` Elisp
+(connection-local-set-profiles
+  '(:application tramp :protocol "ssh" :machine "localhost")
+  'remote-bash)
+
+
+(connection-local-set-profiles
+  '(:application tramp :protocol "sudo"
+    :user "root" :machine "localhost")
+  'remote-ksh)
+
+
+(connection-local-set-profiles
+  nil 'remote-null-device)
+```
+
+配置文件的任何连接配置文件必须已经由 `connection-local-set-profile-variables`定义。
+
+##### 用户选项: `connection-local-criteria-alist` #####
+
+此 alist 含连接标准及其分配的配置文件名称。函数 `connection-local-set-profiles`更新这个列表。
+
+#### 12.14.2 Applying Connection Local Variables ####
+
+在编写 connection-aware code 时，需要收集并可能应用任何连接局部变量。有几种方法可以做到这一点，如下所述。
+
+##### 函数: `hack-connection-local-variables criteria` #####
+
+该函数收集与 `connection-local-variables-alist` 中的标准关联的适用的连接局部变量，而不应用它们。例子:
+
+``` Elisp
+(hack-connection-local-variables
+  '(:application tramp :protocol "ssh" :machine "localhost"))
+
+
+connection-local-variables-alist
+     ⇒ ((null-device . "/dev/null")
+        (shell-login-switch . "-l")
+        (shell-interactive-switch . "-i")
+        (shell-command-switch . "-c")
+        (shell-file-name . "/bin/bash"))
+```
+
+##### 函数: `hack-connection-local-variables-apply criteria` #####
+
+该函数根据标准查找连接局部变量，并立即将它们应用到当前缓冲区中。
+
+##### 宏: `with-connection-local-application-variables application &rest body` #####
+
+应用 application 的所有连接本地变量，这些变量由默认目录指定。
+
+之后，执行body，并展开连接局部变量。例子:
+
+``` Elisp
+(connection-local-set-profile-variables
+  'my-remote-perl
+  '((perl-command-name . "/usr/local/bin/perl5")
+    (perl-command-switch . "-e %s")))
+
+
+(connection-local-set-profiles
+  '(:application my-app :protocol "ssh" :machine "remotehost")
+  'my-remote-perl)
+
+
+(let ((default-directory "/ssh:remotehost:/working/dir/"))
+  (with-connection-local-application-variables 'my-app
+    do something useful))
+```
+
+##### 变量: `connection-local-default-application` #####
+
+默认的 application 是一个符号，将在 `with-connection-local-variables` 中应用。它默认为tramp，但您可以让它绑定来临时更改应用程序(参见局部变量 Local Variables)。
+
+这个变量不能被全局修改。
+
+##### 宏: `with-connection-local-variables &rest body` #####
+
+这相当于 `with-connection-local-application-variables`，但是对应用程序使用 `connection-local-default-application`。
+
+##### 宏: `setq-connection-local [symbol form]...` #####
+
+这个宏使用 `connection-local-profile-name-for-setq` 中指定的 connection-local 配置文件，将每个符号的connection-local设置为相应形式的求值结果;如果配置文件名称为nil，这个宏将像setq一样正常设置变量(参见设置变量值)。
+
+例如，你可以将这个宏与 `with-connection-local-variables` 或 `with-connection-local-application-variables` 结合使用，以惰性初始化 connection-local 设置:
+
+``` Elisp
+(defvar my-app-variable nil)
+
+(connection-local-set-profile-variables
+ 'my-app-connection-default-profile
+ '((my-app-variable . nil)))
+
+(connection-local-set-profiles
+ '(:application my-app)
+ 'my-app-connection-default-profile)
+
+
+(defun my-app-get-variable ()
+  (with-connection-local-application-variables 'my-app
+    (or my-app-variable
+        (setq-connection-local my-app-variable
+                               do something useful))))
+```
+
+##### 变量: `connection-local-profile-name-for-setq` #####
+
+在通过 `setq-connection-local` 设置变量时使用的连接本地配置文件名称，一个符号。这是在 `with-connection-local-variables` 的主体中绑定的，但是如果您想在不同的配置文件上设置变量，也可以自己绑定它。
+
+这个变量不能被全局修改。
+
+##### 变量: `enable-connection-local-variables` #####
+
+如果为nil，则忽略连接局部变量。该变量只能在特殊模式下临时更改。
 
 ### 12.15 Variable Aliases ###
 
+有时使两个变量成为同义词很有用，这样两个变量总是具有相同的值，更改其中一个也会更改另一个。每当更改一个变量的名称时(可能是因为您意识到它的旧名称选择得不好，或者因为它的含义部分地发生了变化)，为了保持兼容性，将旧名称保留为新名称的别名是很有用的。您可以使用 `defvaralias` 来实现这一点。
+
+#### 函数: `defvaralias new-alias base-variable &optional docstring` ####
+
+这个函数将符号 `new-alias` 定义为符号 `base-variable` 的变量别名。这意味着检索 `new-alias` 的值将返回 `base-variable` 的值，而更改 `new-alias` 的值将更改 `base-variable` 的值。两个别名变量名总是共享相同的值和相同的绑定。
+
+如果docstring参数非nil，它为new-alias指定文档;否则，别名将获得与base-variable相同的文档(如果有的话)，除非base-variable本身是别名，在这种情况下，new-alias将获得位于别名链末端的变量文档。
+
+这个函数返回 base-variable。
+
+变量别名可以方便地将变量的旧名称替换为新名称。`make-obsolete-variable` 声明旧的名称已经过时，因此它可能在将来的某个阶段被删除。
+
+#### 函数: `make-obsolete-variable obsolete-name current-name when &optional access-type` ####
+
+这个函数使字节编译器警告变量obsolete-name已过时。如果current-name是一个符号，它是变量的新名称;然后警告消息说要使用当前名称而不是过时名称。如果current-name是一个字符串，这就是消息，没有替代变量。When应该是一个字符串，表示变量第一次被废弃的时间(通常是一个版本号字符串)。
+
+可选参数access-type，如果非nil，应该指定将触发过时警告的访问类型;它可以是get或set。
+
+可以使用宏define-obsolete-variable-alias将两个变量声明为同义词，同时将一个变量声明为废弃变量。
+
+#### 宏: `define-obsolete-variable-alias obsolete-name current-name when &optional docstring` ####
+
+这个宏将变量obsolete-name标记为obsolete，并使其成为变量current-name的别名。它相当于以下内容:
+
+``` Elisp
+(defvaralias obsolete-name current-name docstring)
+(make-obsolete-variable obsolete-name current-name when)
+```
+
+这个宏计算它的所有参数，obsolete-name和current-name都应该是符号，所以典型的用法是这样的:
+
+``` Elisp
+(define-obsolete-variable-alias 'foo-thing 'bar-thing "27.1")
+```
+
+#### 函数: `indirect-variable variable` ####
+
+这个函数返回变量别名链末尾的变量。如果变量不是符号，或者变量没有定义为别名，则函数返回变量。
+
+如果符号链中存在循环，该函数会发出 循环变量间接错误 cyclic-variable-indirection 信号。
+
+``` Elisp
+(defvaralias 'foo 'bar)
+(indirect-variable 'foo)
+     ⇒ bar
+(indirect-variable 'bar)
+     ⇒ bar
+(setq bar 2)
+bar
+     ⇒ 2
+
+foo
+     ⇒ 2
+
+(setq foo 0)
+bar
+     ⇒ 0
+foo
+     ⇒ 0
+```
+
 ### 12.16 Variables with Restricted Values ###
+
+具有限制值的变量
+
+普通的Lisp变量可以被赋任何有效的Lisp对象值。然而，某些Lisp变量不是在Lisp中定义的，而是在C中定义的。大多数这些变量是使用 `DEFVAR_LISP` 在C代码中定义的。与Lisp中定义的变量一样，这些变量可以取任意值。但是，有些变量是使用 `DEFVAR_INT` 或 `DEFVAR_BOOL` 定义的。有关C实现的简要讨论，请参阅编写Emacs原语 [Writing Emacs Primitives](https://www.gnu.org/software/emacs/manual/html_node/elisp/Writing-Emacs-Primitives.html#Defining-Lisp-variables-in-C)，特别是对 `syms_of_filename` 类型函数的描述。
+
+`DEFVAR_BOOL` 类型的变量只能接受nil或t的值。尝试给它们赋任何其他值都会将它们设置为t:
+
+``` Elisp
+(let ((display-hourglass 5))
+  display-hourglass)
+     ⇒ t
+```
+
+#### 变量: `byte-boolean-vars` ####
+
+该变量保存 `DEFVAR_BOOL` 类型的所有变量的列表。
+
+`DEFVAR_INT` 类型的变量只能接受整数值。尝试给它们赋任何其他值将导致错误:
+
+``` Elisp
+(setq undo-limit 1000.0)
+error→ Wrong type argument: integerp, 1000.0
+```
 
 ### 12.17 Generalized Variables ###
 
+*广义变量 generalized variable* 或 *位置形式 place form* 是Lisp内存中可以使用 `setf` 宏存储值的众多位置之一(参见setf宏 The setf Macro)。最简单的位置形式是一个普通的Lisp变量。但是 lists 的car和cdr、数组的元素、符号的属性以及许多其他位置也是存储Lisp值的地方。
+
+广义变量类似于C语言中的左值，其中 `x = a[i]` 从数组中获取元素， `a[i] = x` 使用相同的表示法存储元素。就像在C语言中 `a[i]` 可以是左值一样，在Lisp中也有一组可以作为广义变量的形式。
+
+
+* The setf Macro
+* Defining new setf forms
+
+#### 12.17.1 The setf Macro ####
+
+`setf` 宏是操作广义变量的最基本方法。setf形式类似于setq，不同之处在于它接受每对参数的第一个(左)参数中的任意位置形式，而不仅仅是符号。
+
+例如，`(setf (car a) b)` 将a的car设置为b，执行与 `(setcar a b)` 相同的操作，但不必使用两个单独的函数来设置和访问这种类型的位置。
+
+##### 宏: `setf [place form]...` #####
+
+该宏计算 form 并将其值存储在适当的位置，该值必须是有效的广义变量形式。如果有多个位置和形式对，则像使用setq一样按顺序完成赋值。setf返回最后一个表单的值。
+
+下面的Lisp形式是Emacs中作为广义变量的形式，因此可能出现在setf的place参数中:
+
+* 一个 symbol。换句话说，`(setf x y)` 完全等价于 `(setq x y)`，并且在setf存在的情况下，setq本身严格来说是冗余的。但是，由于风格和历史原因，大多数程序员将继续使用setq来设置简单的变量。宏(setf x y)实际上展开为(setq x y)，因此在编译后的代码中使用它没有性能损失。
+* 对下列任何标准Lisp函数的调用:
+
+``` Elisp
+aref      cddr      symbol-function
+car       elt       symbol-plist
+caar      get       symbol-value
+cadr      gethash
+cdr       nth
+cdar      nthcdr
+```
+
+* 对以下emacs特定函数的调用:
+
+``` Elisp
+alist-get                     overlay-start
+default-value                 overlay-get
+face-background               process-buffer
+face-font                     process-filter
+face-foreground               process-get
+face-stipple                  process-sentinel
+face-underline-p              terminal-parameter
+file-modes                    window-buffer
+frame-parameter               window-dedicated-p
+frame-parameters              window-display-table
+get-register                  window-hscroll
+getenv                        window-parameter
+keymap-parent                 window-point
+match-data                    window-start
+overlay-end
+```
+
+调用形式为 `(substring subplace n [m])`，其中 `subplace`本身是一个有效的广义变量，其当前值是字符串，并且存储的值也是字符串。将新字符串拼接到目标字符串的指定部分中。例如:
+
+``` Elisp
+(setq a (list "hello" "world"))
+     ⇒ ("hello" "world")
+(cadr a)
+     ⇒ "world"
+(substring (cadr a) 2 4)
+     ⇒ "rl"
+(setf (substring (cadr a) 2 4) "o")
+     ⇒ "o"
+(cadr a)
+     ⇒ "wood"
+a
+     ⇒ ("hello" "wood")
+```
+
+* if 和 cond 将作为广义变量。例如，这会将foo或bar变量设置为zot:
+
+``` Elisp
+(setf (if (zerop (random 2))
+	  foo
+	bar)
+      'zot)
+```
+
+如果传递的位置表单不知道如何处理，setf就会发出错误信号。
+
+注意，对于 `nthcdr`，函数的list参数本身必须是有效的位形式。例如， `(setf (nthcdr 0 foo) 7)` 会将foo本身设置为7。
+
+宏`push`(参见修改列表变量 Modifying List Variables)和`pop`(参见访问列表元素 Accessing Elements of Lists)可以操作广义变量，而不仅仅是列表。`(pop place)` 删除并返回存储在原地的列表的第一个元素。它类似于 `(prog1 (car place) (setf place (cdr place)))`，不同之处在于它只对所有子表单求值一次。`(push x place)` 将x插入到存储在位置的列表的前面。它类似于 `(setf place (cons x place))`，只是对子形式求值不同。请注意，`ncdr`位置上的push和pop可用于在列表中的任何位置插入或删除。
+
+cl-lib库为通用变量定义了各种扩展，包括附加的集合位置。参见公共Lisp扩展中的广义变量。
+
+#### 12.17.2 Defining new setf forms ####
+
+本节描述如何定义setf可以操作的新 form。
+
+##### 宏: `gv-define-simple-setter name setter &optional fix-return` #####
+
+这个宏使您能够轻松地为简单的情况定义 `setf` 方法。`name`是函数、宏或特殊形式的名称。只要name有一个直接对应的setter函数来更新它，你就可以使用这个宏，例如 `(gv-define-simple-setter car setcar)`。
+
+这个宏将一个形式的调用
+
+``` Elisp
+(setf (name args...) value)
+```
+
+转换为
+
+``` Elisp
+(setter args... value)
+```
+
+这样的setf调用被记录为返回值。例如，对于car和setcar，这是没有问题的，因为setcar返回它所设置的值。如果你的setter函数不返回值，使用一个非nil值作为 `gv-define-simple-setter` 的 `fix-return` 参数。这个展开后等于
+
+``` Elisp
+(let ((temp value))
+  (setter args… temp)
+  temp)
+```
+
+确保它返回正确的结果。
+
+##### 宏: `gv-define-setter name arglist &rest body` #####
+
+这个宏允许比以前的形式更复杂的集合展开。您可能需要使用这种形式，例如，如果没有简单的setter函数要调用，或者如果有一个，但它需要不同的参数给place形式。
+
+这个宏扩展了形式 `(setf (name args...) value)`，首先根据arglist绑定setf参数形式 `(value args...)`，然后执行主体。body应该返回一个执行赋值的Lisp表单，并最终返回所设置的值。使用这个宏的一个例子是:
+
+``` Elisp
+(gv-define-setter caar (val x) `(setcar (car ,x) ,val))
+```
+
+##### 宏: `gv-define-expander name handler` #####
+
+要对展开进行更多控制，可以使用 `gv-define-expander` 宏。例如，一个可设置的子字符串可以这样实现:
+
+``` Elisp
+(gv-define-expander substring
+  (lambda (do place from &optional to)
+    (gv-letplace (getter setter) place
+      (macroexp-let2* (from to)
+        (funcall do `(substring ,getter ,from ,to)
+                 (lambda (v)
+                   (macroexp-let2* (v)
+                     `(progn
+                        ,(funcall setter `(cl--set-substring
+                                           ,getter ,from ,to ,v))
+                        ,v))))))))
+```
+
+##### 宏: `gv-letplace (getter setter) place &rest body` #####
+
+宏 `gv-letplace` 在定义与setf类似的宏时非常有用;例如，Common Lisp的incf宏可以这样实现:
+
+``` Elisp
+(defmacro incf (place &optional n)
+  (gv-letplace (getter setter) place
+    (macroexp-let2* ((v (or n 1)))
+      (funcall setter `(+ ,v ,getter)))))
+```
+
+getter将绑定到一个可复制的表达式，该表达式返回place的值。setter将绑定到一个函数，该函数接受一个表达式v并返回一个将place设置为v的新表达式。body应该通过getter和setter返回一个Emacs Lisp表达式操作place。
+
+参考源文件 `gv.el` 以了解更多细节
+
+##### 函数: `make-obsolete-generalized-variable obsolete-name current-name when` #####
+
+此函数使字节编译器警告通用变量obsolete-name已过时。如果current-name是一个符号，那么警告消息会说使用current-name而不是obsolete-name。如果current-name是一个字符串，这就是消息。When应该是一个字符串，表示变量第一次被废弃的时间(通常是一个版本号字符串)。
+
+> Common Lisp 注意:公共Lisp定义了另一种方法来指定函数的setf行为，即setf函数，其名称是列表(setf name)而不是符号。例如，`(defun (setf foo)...)` 定义了当setf应用于foo时使用的函数。Emacs不支持这个。在尚未定义适当展开的窗体上使用setf会导致编译时错误。在Common Lisp中，这不是错误，因为函数(setf func)可能会在以后定义。
+
 ### 12.18 Multisession Variables ###
 
+当您将一个变量设置为一个值，然后关闭Emacs并重新启动它时，该值不会自动恢复。用户通常在他们的启动文件中设置普通变量，或者使用自定义(参见自定义设置)来永久设置用户选项，并且不同的包有不同的文件来存储数据(例如，Gnus将其存储在 `.newsrc` 中)。字段和URL库将cookie存储在 `~/.emacs.d/url/cookies`)中。
+
+对于介于这两个极端之间的东西(例如，配置放在启动文件中，大量应用程序状态放在单独的文件中)，Emacs提供了一种工具来在会话之间复制数据，称为多会话变量 multisession variables。(此功能可能不适用于所有系统。)为了让你了解这些词是如何使用的，这里有一个小例子:
+
+``` Elisp
+(define-multisession-variable foo 0)
+(defun my-adder (num)
+  (interactive "nAdd number: ")
+  (setf (multisession-value foo)
+        (+ (multisession-value foo) num))
+  (message "The new number is: %s" (multisession-value foo)))
+```
+
+这将定义变量foo并将其绑定到一个特殊的multisession对象，该对象初始化为值 0 (如果该变量在前一个会话中不存在)。`my-adder` 命令向用户查询一个数字，将其添加到旧的(可能保存的值)，然后保存新值。
+
+此功能并不意味着用于庞大的数据结构，但对于大多数值应该是高性能的。
+
+#### 宏: `define-multisession-variable name initial-value &optional doc &rest args` ####
+
+这个宏将name定义为一个多会话变量，如果这个变量之前没有被赋值，就给它一个初始值。Doc是Doc字符串，在args中可以使用几个关键字参数:
+
+* `:package package-symbol` 该关键字表示多会话变量属于由package-symbol指定的包。包装符号和名称的组合必须是唯一的。如果未给出package-symbol，则默认为名称符号名称的第一个“段”，这是其名称的一部分，直到并不包括第一个' - '。例如，如果name为foo而没有给出package-symbol, package-symbol将默认为foo。
+* `:synchronized bool` 如果bool为非空值，则可以同步多会话变量。这意味着，如果有两个并发的Emacs实例在运行，而另一个Emacs更改了多会话变量foo，那么当前的Emacs实例将在访问该值时检索修改后的数据。如果synchronized为nil或缺失，则不会发生这种情况，并且使用该变量的所有Emacs会话中的值将彼此独立。
+* `:storage storage` 使用指定的存储方法。它可以是sqlite(在使用sqlite支持编译的Emacs中)或文件。如果没有给出，则默认为多会话存储变量的值，如下所述。
+
+#### 函数: `multisession-value variable` ####
+
+这个函数返回变量的当前值。如果这个变量在这个Emacs会话中以前没有被访问过，或者它在外部被修改过，那么它将从外部存储器中读入。如果不是，则按原样返回此会话中的当前值。对于非多会话变量调用此函数是错误的。
+
+通过multisession-value检索到的值可能彼此相等，也可能不相等，但它们总是相等的。
+
+这是一个广义变量(参见广义变量)，所以更新这样一个变量的方法是这样说，例如:
+
+``` Elisp
+(setf (multisession-value foo-bar) 'zot)
+```
+
+只有具有可读打印语法的Emacs Lisp值才能以这种方式保存(请参阅打印表示和读取语法 Printed Representation and Read Syntax)。
+
+如果multisession变量是同步的，设置它可能首先更新值。例如:
+
+``` Elisp
+(cl-incf (multisession-value foo-bar))
+```
+
+它首先检查值是否在不同的Emacs实例中发生了更改，检索该值，然后对该值添加1并存储它。但请注意，这是在没有锁定的情况下完成的，因此如果许多实例同时更新值，则无法预测哪个实例“获胜”。
+
+#### 函数: `multisession-delete object` ####
+
+这个函数从持久化存储中删除对象及其值。
+
+#### 函数: `make-multisession` ####
+
+``` Elisp
+(setq foo (make-multisession :package "mail"
+                             :key "friends"))
+(setf (multisession-value foo) 'everybody)
+```
+
+它支持与define-multisession-variable相同的关键字，但也支持一个`:initial-value`关键字，该关键字指定默认值。
+
+#### 用户选项: `multisession-storage` ####
+
+该变量控制如何存储多会话变量。它的值默认为files，这意味着这些值存储在multisession-directory指定的目录中一个文件一个变量的结构中。如果该值为sqlite，则该值存储在sqlite数据库中;这只有在Emacs使用SQLite支持构建时才可用。
+
+#### 用户选项: `multisession-directory` ####
+
+multisession变量存储在这个目录下，默认是 user-emacs-directory 的 `multisession/` 子目录，通常是 `~/.emacs.d/multisession/`。
+
+#### 命令: `list-multisession-values` ####
+
+该命令弹出一个列出所有multisession变量的缓冲区，并进入一个特殊模式 `multisession-edit-mode`，允许您删除它们并编辑它们的值。
+
+## 13 Functions ##
+
+Lisp程序主要由Lisp函数组成。本章解释函数是什么，它们如何接受参数，以及如何定义它们。
+
+* What Is a Function?
+* Lambda Expressions
+* Naming a Function
+* Defining Functions
+* Calling Functions
+* Mapping Functions
+* Anonymous Functions
+* Generic Functions
+* Accessing Function Cell Contents
+* Closures
+* Open Closures
+* Advising Emacs Lisp Functions
+* Declaring Functions Obsolete
+* Inline Functions
+* The declare Form
+* Telling the Compiler that a Function is Defined
+* Determining whether a Function is Safe to Call
+* Other Topics Related to Functions
+
+### 13.1 What Is a Function? ###
 
 
 
+### 13.2 Lambda Expressions ###
 
+### 13.3 Naming a Function ###
+
+### 13.4 Defining Functions ###
+
+### 13.5 Calling Functions ###
+
+### 13.6 Mapping Functions ###
+
+### 13.7 Anonymous Functions ###
+
+### 13.8 Generic Functions ###
+
+### 13.9 Accessing Function Cell Contents ###
+
+### 13.10 Closures ###
+
+### 13.11 Open Closures ###
+
+### 13.12 Advising Emacs Lisp Functions ###
+
+### 13.13 Declaring Functions Obsolete ###
+
+### 13.14 Inline Functions ###
+
+### 13.15 The declare Form ###
+
+### 13.16 Telling the Compiler that a Function is Defined ###
+
+### 13.17 Determining whether a Function is Safe to Call ###
+
+### 13.18 Other Topics Related to Functions ###
 
 ---
+
+(global-display-line-numbers-mode 0)
+
+<!-- -*- global-display-line-numbers-mode: 1; -*- -->
 
 #### 宏: `` ####
 
