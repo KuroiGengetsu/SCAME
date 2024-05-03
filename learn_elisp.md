@@ -11400,25 +11400,833 @@ Lisp程序主要由Lisp函数组成。本章解释函数是什么，它们如何
 
 ### 13.1 What Is a Function? ###
 
+[What Is a Function?](https://www.gnu.org/software/emacs/manual/html_node/elisp/What-Is-a-Function.html)
 
+在一般意义上，函数是在给定的输入值(称为参数 arguments)下执行计算的规则。计算的结果称为函数的值或返回值。计算也可能有副作用，例如变量值或数据结构内容的持续变化(参见副作用的定义 Definition of side effect)。*纯函数pure function* 是这样一种函数，它除了没有副作用之外，对于相同的参数组合总是返回相同的值，而不考虑诸如机器类型或系统状态之类的外部因素。
+
+在大多数计算机语言中，每个函数都有一个名称。但是在Lisp中，严格意义上的函数是没有名称的:它是一个对象，可以选择性地与作为函数名的符号(例如，car)相关联。参见为函数命名 Naming a Function。当一个函数被赋予一个名称时，我们通常也把这个符号称为“函数”(例如，我们称 car 为函数 car)。在本手册中，函数名和函数对象本身之间的区别通常是不重要的，但我们将在相关的地方注意到它。
+
+某些类似函数的对象，称为特殊形式和宏，也接受参数来执行计算。然而，正如下面所解释的，这些在Emacs Lisp中不被认为是函数。
+
+下面是函数和类函数对象的重要术语:
+
+* `lambda expression`
+    用Lisp编写的函数(严格意义上，即函数对象)。这些将在下一节中进行描述。参见Lambda表达式 Lambda Expressions。
+* `primitive`
+    可从Lisp调用但实际上是用c编写的函数。原语也称为 *内置函数 build-in functions* 或 *子函数 subrs*。例子包括car和append这样的函数。此外，所有特殊形式(见下文)也被视为原语。
+    通常，函数被实现为原语是因为它是Lisp的基础部分(例如，car)，或者因为它提供了操作系统服务的底层接口，或者因为它需要快速运行。与Lisp中定义的函数不同，只能通过更改C源代码和重新编译Emacs来修改或添加原语。参见编写Emacs原语 Writing Emacs Primitives。
+* `special form`
+    一种类似于函数的原语，但不以通常的方式计算其所有参数。它可能只计算一些参数，也可能以不寻常的顺序或多次计算它们。例子包括if, and和while。参见特殊形式 Special Forms。
+* `macro`
+    Lisp中定义的一种结构，它与函数的不同之处在于，它将Lisp表达式转换为另一个要计算的表达式，而不是原始表达式。宏使Lisp程序员能够做特殊形式可以做的事情。看到宏 Macros。
+* `command`
+    可以通过命令执行原语调用的对象，通常由于用户键入与该命令绑定的键序列而调用。参见交互式呼叫 Interactive Call。命令通常是一个函数;如果函数是用Lisp编写的，它会在函数定义中通过交互形式生成命令(参见定义命令)。作为函数的命令也可以从Lisp表达式中调用，就像其他函数一样。
+    键盘宏(字符串和向量)也是命令，尽管它们不是函数。参见键盘宏 Keyboard Macros。如果一个符号的 *函数单元格 function cell* 包含一个命令，我们就说它是一个命令(参见符号组件 Symbol Components);这样的命名命令可以用 `M-x` 调用。
+* `closure`
+    与lambda表达式非常相似的函数对象，不同之处在于它还包含词法变量绑定的环境。看到闭包 Closures。
+* `byte-code function`
+    已被字节编译器编译的函数。请参见字节码功能类型 Byte-Code Function Type。
+* `autoload object`
+    实际函数的 *占位符 place-holder*。如果调用了autoload对象，Emacs将加载包含实际函数定义的文件，然后调用实际函数。看到自动装载 Autoload。
+
+你可以使用函数 `functionp` 来测试一个对象是否是函数:
+
+#### 函数: `functionp object` ####
+
+如果对象是任何类型的函数，即可以传递给 `funcall`，则此函数返回t。注意，function对于作为函数名的符号返回t，对于作为宏或特殊形式的符号返回nil。
+
+如果object不是一个函数，这个函数通常返回nil。然而，函数对象的表示是复杂的，并且出于效率原因，在极少数情况下，即使对象不是函数，该函数也可以返回t。
+
+也可以找出任意函数需要多少个参数:
+
+#### 函数: `func-arity function` ####
+
+此函数提供有关指定函数的参数列表的信息。返回值是形式为 `(min . max)`，其中min是参数的最小数量，max是参数的最大数量，或者是带有 `&rest` 参数的函数的符号 `many`，或者是函数是特殊形式时的符号 `unevalled`。
+
+请注意，在某些情况下，此函数可能会返回不准确的结果，例如:
+
+* 使用 `apply-partially` 定义的函数(参见部分应用 apply-partially)。
+* 使用 `advice-add` 建议的函数(参见建议命名函数 Advising Named Functions)。
+* 动态确定参数列表的函数，作为其代码的一部分。
+
+与functionp不同，接下来的三个函数不将符号视为其函数定义。
+
+#### 函数: `subrp object` ####
+
+如果对象是内置函数(即Lisp原语)，则此函数返回t。
+
+``` Elisp
+(subrp 'message)            ; message is a symbol,
+     ⇒ nil                 ;   not a subr object.
+
+(subrp (symbol-function 'message))
+     ⇒ t
+```
+
+#### 函数: `byte-code-function-p object` ####
+
+如果object是字节码函数，则此函数返回t。例如:
+
+``` Elisp
+(byte-code-function-p (symbol-function 'next-line))
+     ⇒ t
+```
+
+#### 函数: `compiled-function-p object` ####
+
+如果object是一个不是ELisp源代码形式的函数对象，而是类似于机器码或字节码的形式，则此函数返回t。更具体地说，如果函数是内置的(又名“原始的”，参见什么是函数? What Is a Function?)，或者是字节编译的(参见字节编译 Byte Compilation)，或者是本地编译的natively-compiled(参见Lisp编译为本地代码 Compilation of Lisp to Native Code)，或者是从动态模块加载的函数(参见Emacs动态模块 Emacs Dynamic Modules)，它返回t。
+
+#### 函数: `subr-arity subr` ####
+
+这类似于 `func-arity`，但仅适用于内置函数并且没有符号间接 symbol indirection。它对非内置函数发出错误信号。我们建议使用 `func-arity` 代替。
 
 ### 13.2 Lambda Expressions ###
 
+lambda表达式是用Lisp编写的函数对象。下面是一个例子:
+
+``` Elisp
+(lambda (x)
+  "Return the hyperbolic cosine of X."
+  (* 0.5 (+ (exp x) (exp (- x)))))
+```
+
+在Emacs Lisp中，这样的列表是一个有效表达式，其计算结果为函数对象。
+
+lambda表达式本身没有名称;它是一个 *匿名函数 anonymous function*。虽然lambda表达式可以以这种方式使用(参见匿名函数 Anonymous Functions)，但它们更常与符号关联以创建命名函数(参见命名函数 Naming a Function)。在讨论这些细节之前，下面的小节描述lambda表达式的组件及其功能。
+
+* Components of a Lambda Expression
+* A Simple Lambda Expression Example
+* Features of Argument Lists
+* Documentation Strings of Functions
+
+#### 13.2.1 Components of a Lambda Expression ####
+
+lambda表达式是一个看起来像这样的列表:
+
+``` Elisp
+(lambda (arg-variables...)
+  [documentation-string]
+  [interactive-declaration]
+  body-forms...)
+```
+
+lambda表达式的第一个元素总是符号`lambda`。这表明该列表表示一个函数。函数被定义为以lambda开头的原因是，用于其他用途的其他列表不会意外地作为函数有效。
+
+第二个元素是符号列表——参数变量名(参见参数列表的特性 Features of Argument Lists)。这被称为 *lambda list*。当调用Lisp函数时，参数值将与lambda列表中的变量进行匹配，这些变量将与所提供的值进行局部绑定。参见局部变量 Local Variables。
+
+文档字符串是一个放在函数定义中的Lisp字符串对象，用于描述Emacs帮助工具的函数。请参阅函数字符串文档 Documentation Strings of Functions。
+
+交互式声明是表单(交互式代码字符串 interactive code-string)的列表。这声明了在交互使用函数时如何提供参数。带有此声明的函数称为命令 commands;它们可以使用 `M-x` 或绑定到一个键来调用。不打算以这种方式调用的函数不应该具有交互式声明。有关如何编写交互式声明，请参阅定义命令 Defining Commands。
+
+其余的元素是函数的主体:完成函数工作的Lisp代码(或者，正如Lisp程序员所说，“要计算的Lisp forms 列表”)。函数返回的值是函数体最后一个元素返回的值。
+
+#### 13.2.2 A Simple Lambda Expression Example ####
+
+考虑下面的例子:
+
+``` Elisp
+(lambda (a b c) (+ a b c))
+```
+
+我们可以通过将其传递给 `funcall` 来调用这个函数，像这样:
+
+``` Elisp
+(funcall (lambda (a b c) (+ a b c))
+         1 2 3)
+;  6
+```
+
+这个调用用变量a绑定到1,b绑定到2,c绑定到3来计算lambda表达式的主体。对主体求值，将这三个数相加，结果为6;因此，对该函数的调用返回值6。
+
+注意，参数可以是其他函数调用的结果，如下例所示:
+
+``` Elisp
+(funcall (lambda (a b c) (+ a b c))
+         1 (* 2 3) (- 5 4))
+;  8
+```
+
+这将从左到右计算参数1，`(* 2 3)` 和 `(- 5 4)`。然后，它将lambda表达式应用于参数值1,6和1，以产生值8。
+
+正如这些示例所示，您可以使用带有lambda表达式作为CAR的表单来创建局部变量并为其赋值。在Lisp的早期，这种技术是绑定和初始化局部变量的唯一方法。但是现在，为了达到这个目的，使用特殊形式let(参见局部变量)更加清晰。Lambda表达式主要用作匿名函数，作为参数传递给其他函数(参见匿名函数 Anonymous Functions)，或者作为符号函数定义存储以产生命名函数(参见命名函数 Naming a Function)。
+
+#### 13.2.3 Features of Argument Lists ####
+
+我们的简单示例函数 `(lambda (a b c) (+ a b c))` 指定了三个参数变量，因此必须使用三个参数来调用它:如果您试图仅使用两个或四个参数来调用它，则会得到错误的参数数量错误 wrong-number-of-arguments error(请参阅错误 Errors)。
+
+编写允许省略某些参数的函数通常很方便。例如，函数`substring`接受三个参数—字符串、开始索引和结束索引—但是如果省略它，第三个参数默认为字符串的长度。对于某些函数来说，接受不定数量的参数也很方便，就像函数list和+所做的那样。
+
+要指定在调用函数时可以省略的可选参数，只需在可选参数之前包含关键字 `&optional`。要指定一个包含零个或多个额外参数的列表，请在最后一个参数之前包含关键字 `&rest`。
+
+因此，参数列表的完整语法如下:
+
+``` Elisp
+(required-vars…
+ [&optional [optional-vars…]]
+ [&rest rest-var])
+```
+
+方括号表示 `&optional` 和 `&rest` 子句以及它们后面的变量是可选的。
+
+对函数的调用需要为每个必需的变量提供一个实际参数。可以有0个或多个可选变量的实际参数，除非lambda列表使用&rest，否则不能有任何实际参数。在这种情况下，可能有任意数量的额外实际参数。
+
+如果省略了可选变量和rest变量的实际参数，则它们总是默认为`nil`。函数无法区分nil的显式参数和省略的参数。然而，函数体可以自由地认为nil是其他一些有意义值的缩写。这就是substring所做的;nil作为substring的第三个参数意味着使用所提供的字符串长度。
+
+> Common Lisp注意: Common Lisp允许函数指定在省略可选参数时使用的默认值;Emacs Lisp总是使用`nil`。Emacs Lisp不支持告诉您参数是否显式传递的提供变量。
+
+例如，一个参数列表看起来像这样:
+
+``` Elisp
+(a b &optional c d &rest e)
+```
+
+将a和b绑定到前两个实际参数，这是必需的。如果提供了一个或两个以上的参数，则c和d分别绑定到它们;在前四个参数之后的任何参数都被收集到一个列表中，并且e被绑定到该列表中。因此，如果只有两个参数，则c, d和e为nil;如果有两个或三个参数，d和e为nil;如果参数不超过4个，则e为nil。请注意，为e提供的带有显式nil参数的五个参数将导致该nil参数作为包含一个元素 `(nil)` 的列表传递，就像e的任何其他单个值一样。
+
+没有办法在可选参数后面加上必需参数——这是没有意义的。要了解为什么必须如此，假设示例中的c是可选的，而d是必需的。假设给出了三个实际的参数;第三个参数是哪个变量?是用在c上，还是d上?两种可能性都有。类似地，在 `&rest` 参数之后有更多的参数(无论是必需的还是可选的)是没有意义的。
+
+下面是一些参数列表和正确调用的例子:
+
+``` Elisp
+(funcall (lambda (n) (1+ n))        ; One required:
+         1)                         ; requires exactly one argument.
+     ⇒ 2
+(funcall (lambda (n &optional n1)   ; One required and one optional:
+           (if n1 (+ n n1) (1+ n))) ; 1 or 2 arguments.
+         1 2)
+     ⇒ 3
+(funcall (lambda (n &rest ns)       ; One required and one rest:
+           (+ n (apply '+ ns)))     ; 1 or more arguments.
+         1 2 3 4 5)
+     ⇒ 15
+```
+
+> `(apply FUNCTION &rest ARGUMENTS)`
+> Call FUNCTION with our remaining args, using our last arg as list of args.
+> Then return the value FUNCTION returns.
+> With a single argument, call the argument’s first element using the
+> other elements as args.
+> Thus, `(apply '+ 1 2 '(3 4))` returns 10.
+
+#### 13.2.4 Documentation Strings of Functions ####
+
+lambda表达式可以选择在lambda列表后面有一个文档字符串。这个字符串不影响函数的执行;它是一种注释，但是是一种系统化的注释，它实际上出现在Lisp世界中，并且可以由Emacs帮助工具使用。请参阅文档 Documentation，了解如何访问文档字符串。
+
+为程序中的所有函数提供文档字符串是一个好主意，即使是那些只从程序内部调用的函数。文档字符串类似于注释，只是它们更容易访问。
+
+**文档字符串的第一行** 应该独立存在，因为适当地只显示这第一行。它应该由一个或两个完整的句子组成，总结函数的目的。
+
+文档字符串的开头通常在源文件中缩进，但由于这些空格位于开始双引号之前，因此它们不是字符串的一部分。有些人习惯缩进字符串的任何附加行，以便文本在程序源中对齐。这是一个错误。以下行的缩进在字符串内;在源代码中看起来不错的东西，在帮助命令中显示出来时就会显得很难看。
+
+您可能想知道为什么文档字符串是可选的，因为它后面有函数的必需组件(主体)。由于对字符串求值返回该字符串，没有任何副作用，因此如果它不是主体中的最后一个形式，则没有任何影响。因此，在实践中，主体的第一种形式和文档字符串之间没有混淆;如果唯一的主体形式是字符串，那么它既可以作为返回值，也可以作为文档。
+
+文档字符串的最后一行可以指定与实际函数参数不同的 **调用约定 calling conventions**。像这样写文本:
+
+``` Elisp
+
+\(fn arglist)
+
+```
+
+在空白行之后，在行开头，在文档字符串中没有换行符。( `\` 是为了避免混淆Emacs运动命令。 Emacs motion commands)以这种方式指定的调用约定出现在帮助消息中，而不是从函数的实际参数派生的调用约定。
+
+这个特性对于宏定义特别有用，因为在宏定义中编写的参数通常与用户认为的宏调用部分的方式不一致。
+
+如果您希望弃用调用约定而支持上述规范所宣传的约定，则不要使用此特性。相反，请使用 *公告调用约定 advertised-calling-convention* 声明(参见声明形式 The declare Form)或 *设置公告调用约定 set-advertised-calling-convention*(参见声明函数过时 Declaring Functions Obsolete)，因为这两个将导致字节编译器在编译使用废弃的调用约定的Lisp程序时发出警告消息。
+
+`(fn)` 特性通常用于以下情况:
+
+* 在宏或函数中详细说明参数及其用途。例子:
+
+``` Elisp
+(defmacro lambda (&rest cdr)
+  "...
+\(fn ARGS [DOCSTRING] [INTERACTIVE] BODY)"...)
+```
+
+* 提供更详细的描述和参数名称。例子:
+
+``` Elisp
+(defmacro macroexp--accumulate (var+list &rest body)
+  "…
+\(fn (VAR LIST) BODY…)"
+  (declare (indent 1))
+  (let ((var (car var+list))
+	  (list (cadr var+list))
+…)))
+```
+
+为了更好地解释 `defalias` 的目的。例子:
+
+``` Elisp
+(defalias 'abbrev-get 'get
+  "…
+\(fn ABBREV PROP)")
+```
+
+文档字符串通常是静态的，但有时也需要动态地生成它们。在某些情况下，您可以通过编写一个宏来实现这一点，该宏在编译时生成函数的代码，包括所需的文档字符串。但是您也可以通过编写 `(:documentation form)` 而不是文档字符串来动态地生成文档字符串。这将在定义函数时在运行时计算form，并将其用作文档string。还可以在请求时动态地计算文档字符串，方法是将函数符号的 *function-documentation* 属性设置为Lisp形式，计算结果为字符串(这只适用于使用词法绑定的代码。)。
+
+例如:
+
+``` Elisp
+(defun adder (x)
+  (lambda (y)
+    (:documentation (format "Add %S to the argument Y." x))
+    (+ x y)))
+(defalias 'adder5 (adder 5))
+(documentation 'adder5)
+    ⇒ "Add 5 to the argument Y."
+
+
+(put 'adder5 'function-documentation
+     '(concat (documentation (symbol-function 'adder5) 'raw)
+              "  Consulted at " (format-time-string "%H:%M:%S")))
+(documentation 'adder5)
+    ⇒ "Add 5 to the argument Y.  Consulted at 15:52:13"
+(documentation 'adder5)
+    ⇒ "Add 5 to the argument Y.  Consulted at 15:52:18"
+```
+
+> 格式化时间字符串
+> `(format-time-string FORMAT-STRING &optional TIME ZONE)`
+
 ### 13.3 Naming a Function ###
+
+符号可以作为函数的名称。当符号的 *函数单元 function cell*(参见符号组件 Symbol Components)包含函数对象(例如lambda表达式)时，就会发生这种情况。然后符号本身成为一个有效的、可调用的函数，相当于函数单元格中的函数对象。
+
+函数单元格的内容也称为符号的函数定义 *function definition*。用符号的函数定义代替符号的过程称为 *符号间接函数 symbol function indirection*;参见符号函数间接 Symbol Function Indirection。如果你没有给一个符号一个函数定义，它的函数单元被认为是空的 void，它不能作为一个函数使用。
+
+实际上，几乎所有函数都有名称，并通过它们的名称来引用。您可以通过定义lambda表达式并将其放入函数单元中来创建一个命名的Lisp函数(请参阅访问函数单元内容 Accessing Function Cell Contents)。然而，更常见的是使用defun宏，这将在下一节中描述。参见定义函数 Defining Functions。
+
+我们给函数命名是因为在Lisp表达式中通过函数名来引用它们很方便。而且，命名Lisp函数可以很容易地引用自己——它可以是递归的 recursive。此外，原语只能通过其名称在文本中引用，因为原语函数对象(参见原语函数类型)没有读语法。
+
+函数不需要有唯一的名称。给定的函数对象通常只出现在一个符号的函数单元格中，但这只是一种惯例。使用fset很容易将其存储在几个符号中;然后，每个符号都是同一函数的有效名称。
+
+注意，用作函数名的符号也可以用作变量;符号的这两种用法是独立的，并不冲突。(在Lisp的一些方言中不是这样，比如Scheme。)
+
+按照惯例，如果一个函数的符号由两个以 `——` 分隔的名称组成，则该函数打算用于内部使用，并且第一部分命名定义该函数的文件。例如，名为 `vc-git——rev-parse` 的函数是在 `vc-git.el` 中定义的内部函数。用C编写的内部使用函数的名称以 `-internal` 结尾，例如，`bury-buffer-internal`。2018年之前贡献的Emacs代码可能会遵循其他内部使用的命名约定，这些约定正在逐步淘汰。
 
 ### 13.4 Defining Functions ###
 
+我们通常在函数第一次创建时给它起一个名字。这被称为 *定义函数 defining a function*，我们通常使用`defun`宏来完成。本节还描述了定义函数的其他方法。
+
+#### 宏: `defun name args [doc] [declare] [interactive] body...` ####
+
+`defun` 是定义新的Lisp函数的常用方法。它将符号 `name` 定义为具有参数列表 `args`(参见参数列表的特性 Features of Argument Lists)和 `body` 给出的体形式的函数。名字和参数都不应该加引号。
+
+`doc`，如果存在，应该是一个字符串，指定函数的文档字符串(参见函数的文档字符串 Documentation Strings of Functions)。
+
+`declare`，如果存在的话，应该是一个指定函数元数据的声明表单(参见声明表单)。
+
+`interactive`，如果存在的话，应该是一个交互式表单，指定如何交互式地调用函数(参见交互式调用 Interactive Call)。
+
+defun的返回值未定义。
+
+下面是一些例子:
+
+``` Elisp
+(defun foo () 5)
+(foo)
+     ⇒ 5
+
+
+(defun bar (a &optional b &rest c)
+    (list a b c))
+(bar 1 2 3 4 5)
+     ⇒ (1 2 (3 4 5))
+
+(bar 1)
+     ⇒ (1 nil nil)
+
+(bar)
+error→ Wrong number of arguments.
+
+
+(defun capitalize-backwards ()
+  "Upcase the last letter of the word at point."
+  (interactive)
+  (backward-word 1)
+  (forward-word 1)
+  (backward-char 1)
+  (capitalize-word 1))
+```
+
+大多数Emacs函数都是Lisp程序源代码的一部分，并且在Emacs Lisp阅读器在执行程序源代码之前读取程序源代码时定义。然而，你也可以在运行时动态定义函数，例如，通过在程序代码执行时生成defun调用。如果您这样做，请注意，Emacs的帮助命令(例如 `C-h-f`)可能无法找到源代码，因为动态生成函数通常看起来与通常的静态调用defun非常不同，它在 `*Help*` 缓冲区中提供了一个跳转到函数定义的按钮。您可以通过使用 `definition-name`属性来简化查找生成此类函数的代码的工作，请参见标准符号属性 Standard Symbol Properties。
+
+注意不要在无意中重新定义现有的函数。`defun`甚至可以在没有任何犹豫或通知的情况下重新定义像car这样的原始函数。Emacs并不阻止您这样做，因为重新定义函数有时是故意的，并且没有办法区分有意的重新定义和无意的重新定义。
+
+#### 函数: `defalias name definition &optional doc` ####
+
+这个函数将符号 `name` 定义为一个函数，带有定义 `definition`。定义可以是任何有效的Lisp函数或宏，也可以是特殊形式(参见特殊形式)，也可以是键映射(参见键映射 Keymaps)，也可以是向量或字符串(键盘宏)。defalias的返回值是undefined。
+
+如果doc非nil，它将成为name的函数文档。否则，将使用定义提供的任何文档。
+
+在内部，defalias通常使用fset来设置定义。但是，如果name具有 `defalias-fset-function`属性，则使用关联值作为要调用的函数来代替fset。
+
+使用默认值的适当位置是定义特定函数或宏名称的地方—特别是该名称显式出现在加载的源文件中的地方。这是因为defalias记录了定义函数的文件，就像defun一样(参见卸载 Unloading)。
+
+相比之下，在为其他目的操作函数定义的程序中，最好使用不保留此类记录的fset。参见访问功能单元内容 Accessing Function Call Contents。
+
+#### 函数: `function-alias-p object &optional noerror` ####
+
+检查object是否为函数别名。如果是，则返回一个表示函数别名链的符号列表，否则返回nil。例如，如果a是b的别名，b是c的别名:
+
+``` Elisp
+(function-alias-p 'a)
+    ⇒ (b c)
+```
+
+如果定义中存在循环，则会发出错误信号。如果noerror为非nil，则返回链的非循环部分。
+
+您不能使用defun或defalias创建新的原语函数，但是您可以使用它们来更改任何符号的函数定义，甚至像 car 或 `x-popup-menu` 这样的正常定义是原语的符号。然而，这是有风险的:例如，在不完全破坏Lisp的情况下重新定义car几乎是不可能的。重新定义像 `x-popup-menu`这样晦涩的函数不那么危险，但它仍然可能不像您期望的那样工作。如果从C代码中调用原语，它们会直接调用原语的C定义，因此更改符号的定义不会对它们产生影响。
+
+另请参见 `defsubst`，它定义了一个类似defun的函数，并告诉Lisp编译器对其执行内联展开。参见内联函数 Inline Functions。
+
+要取消函数名的定义，请使用 `fmakunbound`。参见访问功能单元内容 Accessing Function Cell Contents。
+
 ### 13.5 Calling Functions ###
+
+定义函数只是战斗的一半。函数在你调用它们之前不会做任何事情，也就是说，告诉它们运行。调用函数 calling a function 也称为调用 invocation。
+
+调用函数最常用的方法是对列表求值。例如，计算列表 `(concat "a" "b")` 调用带有参数"a"和"b"的concat函数。有关评估的描述，请参阅评估 Evaluation。
+
+当你在程序中将列表写成表达式时，你要在程序文本中指定调用哪个函数，以及给它提供多少参数。通常这正是你想要的。有时您需要在运行时计算要调用哪个函数。要做到这一点，请使用函数`funcall`。当您还需要在运行时确定要传递多少参数时，请使用`apply`。
+
+#### 函数: `funcall function &rest arguments` ####
+
+funcall调用带参数的函数，并返回函数返回的任何值。
+
+由于funcall是一个函数，它的所有参数(包括function)都在调用funcall之前求值。这意味着您可以使用任何表达式来获得要调用的函数。这也意味着funcall看不到你为参数写的表达式，只看到它们的值。这些值在调用函数时不会被求值第二次;funcall的操作类似于调用函数的正常过程，一旦它的参数已经被求值。
+
+实参函数必须是Lisp函数或基本函数。不允许使用特殊的形式和宏，因为它们只有在给出未求值的参数表达式时才有意义。funcall不能提供这些，因为，正如我们上面看到的，它从一开始就不知道这些。
+
+如果您需要使用funcall来调用命令并使其表现为交互式调用，请使用 `funcall-interactively`(参见交互式调用 Interactive Call)。
+
+``` Elisp
+
+
+(setq f 'list)
+     ⇒ list
+
+(funcall f 'x 'y 'z)
+     ⇒ (x y z)
+
+(funcall f 'x 'y '(z))
+     ⇒ (x y (z))
+
+(funcall 'and t nil)
+error→ Invalid function: #<subr and>
+
+```
+
+将这些例子与 apply 程序的例子进行比较。
+
+#### 函数: `apply function &rest arguments` ####
+
+`apply` 调用带参数的函数，就像`funcall`一样，但有一点不同: **最后一个参数是一个对象列表**，这些对象作为单独的参数传递给函数，而不是一个单独的列表。我们说apply *扩展 spreads* 这个列表，以便每个单独的元素都成为一个参数。
+
+使用单个参数的apply是特殊的:参数的第一个元素(必须是一个非空列表)作为函数调用，其余元素作为单独的参数。传递两个或更多参数会更快。
+
+apply返回调用函数的结果。与funcall一样，function必须要么是Lisp函数，要么是原始函数;特殊的表单和宏在apply中没有意义。
+
+``` Elisp
+(setq f 'list)
+     ⇒ list
+
+(apply f 'x 'y 'z)
+error→ Wrong type argument: listp, z
+
+(apply '+ 1 2 '(3 4))
+     ⇒ 10
+
+(apply '+ '(1 2 3 4))
+     ⇒ 10
+
+
+(apply 'append '((a b c) nil (x y z) nil))
+     ⇒ (a b c x y z)
+
+
+(apply '(+ 3 4))
+     ⇒ 7
+```
+
+有关使用apply的有趣示例，请参见`mapcar`的定义。
+
+有时将函数的一些参数固定在某些值是有用的，而将其他参数留到实际调用函数时使用。*固定 fixing* 函数的某些参数的行为称为 *函数的部分应用 partial application of the function*。结果是一个新函数，它接受其余参数并调用合并了所有参数的原始函数。
+
+> 这与柯里化相关 currying，但不同于柯里化，柯里化将一个接受多个参数的函数转换为可以作为一个函数链调用的方式，每个函数都有一个参数。
+
+下面是如何在Emacs Lisp中实现部分应用程序:
+
+#### 函数: `apply-partially func &rest args` ####
+
+此函数返回一个新函数，当调用该函数时，将使用由args和调用时指定的附加参数组成的参数列表调用func。如果func接受 n 个参数，那么使用 `m <= n` 个参数调用 `apply-partially` 将产生一个包含 `n - m` 个参数的新函数。
+
+> 如果函数可以接受的参数数量是无限的，那么新函数也将接受无限数量的参数，因此在这种情况下，apply-partially 不会减少新函数可以接受的参数数量。
+
+下面是我们如何定义内置函数 `1+`，如果它不存在的话，使用 `apply-partially` 和 `+`，另一个内置函数:
+
+> 请注意，与内置函数不同，此版本接受任意数量的参数。
+
+``` Elisp
+(defalias '1+ (apply-partially '+ 1)
+  "Increment argument by one.")
+
+(1+ 10)
+     ⇒ 11
+```
+
+Lisp函数通常接受函数作为参数，或者在数据结构(尤其是钩子变量和属性列表)中找到它们，然后使用funcall或apply调用它们。接受函数参数的函数通常被称为 *函数式函数 functionals*。
+
+有时，在调用函数时，提供无操作函数作为参数是很有用的。下面是三种不同的no-op函数:
+
+#### 函数: `identity argument` ####
+
+这个函数返回参数，没有副作用。
+
+#### 函数: `ignore &rest arguments` ####
+
+这个函数忽略任何参数并返回nil。
+
+#### 函数: `always &rest arguments` ####
+
+这个函数忽略任何参数并返回t。
+
+有些函数是用户可见的命令，可以交互式地调用(通常通过一个键序列)。通过使用 `call-interactively` 函数，可以完全像交互式调用那样调用这样的命令。参见交互式调用 Interactive Call。
 
 ### 13.6 Mapping Functions ###
 
+*映射函数 mapping function* 将给定的函数(不是特殊的形式或宏)应用于列表或其他集合的每个元素。Emacs Lisp有几个这样的函数;本节描述`mapcar`、`mapc`、`mapconcat`和`mapcan`，它们在 *列表 obarray* 上进行映射。
+
+请参阅 `mapatoms` 的定义 Definition of mapatoms，了解mapatoms函数，该函数对 *数组 obarray* 中的符号进行映射。
+
+请参阅`mapash`的定义，了解映射哈希表中的键/值关联的`mapash`函数。
+
+这些映射函数 **不允许使用char-table**，因为char-table是一个稀疏数组，其标称索引范围非常大。要以适当处理其稀疏特性的方式映射到一个char-table上，请使用 `map-char-table` 函数(参见Char-Tables)。
+
+#### 函数: `mapcar function sequence` ####
+
+mapcar依次对序列中的每个元素应用函数，并返回结果列表。
+
+参数序列可以是除 `char-table` 以外的任何类型的序列;也就是说，一个列表、一个向量、一个布尔向量或一个字符串。结果总是一个列表。结果的长度与序列的长度相同。例如:
+
+``` Elisp
+(mapcar #'car '((a b) (c d) (e f)))
+     ⇒ (a c e)
+(mapcar #'1+ [1 2 3])
+     ⇒ (2 3 4)
+(mapcar #'string "abc")
+     ⇒ ("a" "b" "c")
+
+
+;; Call each function in my-hooks.
+(mapcar 'funcall my-hooks)
+
+
+(defun mapcar* (function &rest args)
+  "Apply FUNCTION to successive cars of all ARGS.
+Return the list of results."
+  ;; If no list is exhausted,
+  (if (not (memq nil args))
+      ;; apply function to CARs.
+      (cons (apply function (mapcar #'car args))
+            (apply #'mapcar* function
+                   ;; Recurse for rest of elements.
+                   (mapcar #'cdr args)))))
+
+
+(mapcar* #'cons '(a b c) '(1 2 3 4))
+     ⇒ ((a . 1) (b . 2) (c . 3))
+```
+
+> (memq ELT LIST)
+> Return non-nil if ELT is an element of LIST.  Comparison done with ‘eq’.
+> The value is actually the tail of LIST whose car is ELT.
+
+#### 函数: `mapcan function sequence` ####
+
+这个函数将function应用于序列的每个元素，就像mapcar一样，但是它不是将结果收集到一个列表中，而是通过 **修改结果**(使用`nconc`;参见重新排列列表的函数 Functions that Rearrange Lists)。与mapcar一样，sequence可以是除char-table以外的任何类型。
+
+``` Elisp
+;; Contrast this:
+(mapcar #'list '(a b c d))
+     ⇒ ((a) (b) (c) (d))
+;; with this:
+(mapcan #'list '(a b c d))
+     ⇒ (a b c d)
+```
+
+#### 函数: `mapc function sequence` ####
+
+`mapc` 类似于 `mapcar`，只不过函数 **只用于副作用**——它返回的值被 ignore，而不是收集到列表中。mapc总是返回 sequence。
+
+#### 函数: `mapconcat function sequence &optional separator` ####
+
+`mapconcat` 对 sequence 的每个元素应用函数;结果(必须是字符序列(字符串、向量或列表))被连接到单个字符串返回值中。在每对结果序列之间，mapconcat插入分隔符中的字符，分隔符也必须是字符串、矢量或字符列表;nil 值被视为空字符串。参见序列、数组和向量。
+
+实参函数必须是一个可以接受一个实参并返回字符序列的函数:字符串、向量或列表。参数序列可以是除char-table以外的任何类型的序列;也就是说，一个列表、一个向量、一个布尔向量或一个字符串。
+
+``` Elisp
+(mapconcat #'symbol-name
+           '(The cat in the hat)
+           " ")
+     ⇒ "The cat in the hat"
+
+
+(mapconcat (lambda (x) (format "%c" (1+ x)))
+           "HAL-8000")
+     ⇒ "IBM.9111"
+```
+
 ### 13.7 Anonymous Functions ###
+
+虽然函数通常同时使用defun和给定名称来定义，但有时使用显式lambda表达式(匿名函数)也很方便。无论函数名在哪里，匿名函数都是有效的。它们通常被赋值为变量值，或者作为函数的参数;例如，您可以将一个作为函数参数传递给mapcar，它将该函数应用于列表的每个元素(参见映射函数)。有关这方面的一个实际例子，请参阅描述符号示例 describe-symbols example。
+
+在定义要用作匿名函数的lambda表达式时，原则上可以使用任何方法来构造列表。但通常你应该使用`lambda`宏，或者 特殊形式 `function`，或者 `#'` 读语法
+
+#### 宏: `lambda args [doc] [interactive] body...` ####
+
+这个宏返回一个匿名函数，带有参数列表args、文档字符串doc(如果有的话)、交互式规范interactive(如果有的话)和body给出的主体形式。
+
+在动态绑定下，这个宏有效地使lambda form 自引用 self-quoting: 计算CAR为lambda的表单将生成表单本身:
+
+``` Elisp
+(lambda (x) (* x x))
+;  (lambda (x) (* x x))
+```
+
+注意，在词法绑定下求值时，结果是一个闭包对象(参见闭包 Closures)。
+
+lambda形式还有另一个作用:它通过使用函数作为子例程 subroutine(见下文)，告诉Emacs求值器和字节编译器它的参数是一个函数。
+
+#### 特殊形式: `function function-object` ####
+
+这种特殊形式返回函数对象而不求值。在这一点上，它类似于 quote(参见引用 Quoting)。但与quote不同的是，它还可以作为Emacs求值器和字节编译器的一个提示，即 *function-object* 打算用作函数。假设 function-object 是一个有效的lambda表达式，它有两个效果:
+
+1. 当代码被字节编译时，function-object被编译成字节码函数对象(参见字节编译 Byte Compilation)。
+2. 启用词法绑定后，函数对象被转换为闭包。看到闭包 Closures。
+
+当function-object是一个符号并且代码是字节编译时，如果该函数未定义或可能在运行时未知，字节编译器将发出警告。
+
+#### 读语法: `#'` ####
+
+read语法 `#'` 是 function 的简写。以下形式都是等价的:
+
+``` Elisp
+(lambda (x) (* x x))
+
+(function (lambda (x) (* x x)))
+
+#'(lambda (x) (* x x))
+```
+
+在下面的例子中，我们定义了一个 `change-property` 函数，它接受一个函数作为第三个参数，然后是一个 双属性 double-property 函数，通过传递一个匿名函数来利用change-property:
+
+``` Elisp
+defun change-property (symbol prop function)
+  (let ((value (get symbol prop)))
+    (put symbol prop (funcall function value))))
+
+
+(defun double-property (symbol prop)
+  (change-property symbol prop (lambda (x) (* 2 x))))
+
+```
+
+> (get SYMBOL PROPNAME)
+> Return the value of SYMBOL’s PROPNAME property.
+> This is the last value stored with ‘(put SYMBOL PROPNAME VALUE)’.
+
+注意，我们没有引用lambda形式。
+
+如果编译上面的代码，匿名函数也会被编译。如果你通过引用一个列表来构造匿名函数，就不会发生这种情况:
+
+``` Elisp
+(defun double-property (symbol prop)
+  (change-property symbol prop '(lambda (x) (* 2 x))))
+```
+
+在这种情况下，匿名函数在编译后的代码中保留为lambda表达式。字节编译器不能假设这个列表是一个函数，尽管它看起来像一个函数，因为它不知道change-property打算将它作为函数使用。
 
 ### 13.8 Generic Functions ###
 
+泛型函数
+
+这一节的内容看不懂
+
+[Generic Functions](https://www.gnu.org/software/emacs/manual/html_node/elisp/Generic-Functions.html)
+
+使用defun定义的函数对其参数的类型和期望值有一组硬编码的假设。例如，设计用于处理其参数值(数字或数字列表)的函数，如果使用任何其他类型的值(如vector或string)调用，则会失败或发出错误信号。这是因为函数的实现没有准备好处理设计期间假定的类型以外的类型。
+
+相比之下，面向对象程序使用 **多态函数 polymorphic**:一组具有相同名称的专门化函数，其中每个函数都是为特定的参数类型集编写的。实际调用哪个函数是在运行时根据实际参数的类型决定的。
+
+Emacs提供了对多态性的支持。像其他Lisp环境一样，特别是Common Lisp及其 *Common Lisp Object System* (CLOS)，这种支持是基于 *泛型函数 generic functions* 的。Emacs泛型函数与CLOS密切相关，包括使用类似的名称，因此，如果您有使用CLOS的经验，本节的其余部分听起来会非常熟悉。
+
+泛型函数通过定义其名称和参数列表来指定抽象操作，但(通常)没有实现。几个特定参数类的实际实现是由方法提供的，这些方法应该单独定义。实现泛型函数的每个方法都具有与泛型函数相同的名称，但是方法的定义指明了它可以通过专门化泛型函数定义的参数来处理哪些类型的参数。这些参数特化器可以或多或少地特定;例如，字符串类型比一般类型(如sequence)更具体。
+
+请注意，与基于消息的 面对对象语言(如c++和Simula)不同，实现泛型函数的方法不属于类，它们属于它们实现的泛型函数。
+
+当调用泛型函数时，它通过比较调用者传递的实际参数与每个方法的参数特化器来选择适用的方法。如果调用的实际参数与方法的专门化符兼容，则该方法适用。如果适用的方法不止一个，则使用下面描述的某些规则将它们组合起来，然后组合处理调用。
+
+#### 宏: `cl-defgeneric name arguments [documentation] [options-and-methods…] &rest body` ####
+
+这个宏定义了一个具有指定名称和参数的泛型函数。
+
+如果存在body，则提供默认实现。如果存在文档(应该总是存在)，它以 `(:documentation docstring)` 的形式为泛型函数指定文档字符串。
+
+可选的 `options-and-methods`可以是以下形式之一:
+
+* `(declare declarations)`
+    声明形式，如声明表单中所述 The declare Form。
+* `(:argument-precedence-oreder &rest args)`
+    此形式影响组合适用方法的排序顺序。通常，在组合过程中比较两个方法时，从左到右检查方法参数，参数特化器更具体的第一个方法将出现在另一个方法之前。由这种形式定义的顺序将覆盖该顺序，并且根据其在这种形式中的顺序检查参数，而不是从左到右。
+* `(:method [qualifiers…] args &rest body)`
+    这个形式定义了一个类似于 `cl-defmethod` 的方法。
+
+#### 宏: `cl-defmethod name [extra] [qualifier] arguments [&context (expr spec)…] &rest [docstring] body` ####
+
+这个宏定义了名为 `name` 的泛型函数的特定实现。实现代码由主体给出。如果存在，docstring是该方法的文档字符串。参数列表在实现泛型函数的所有方法中必须相同，并且必须与该函数的参数列表相匹配，它提供了 `(arg spec)` 形式的参数特化器 argument specializers，其中arg是在 `cl-defgeneric` 调用中指定的参数名称，spec是以下特化器形式之一:
+
+* `type`
+    此特化器要求参数为给定类型，即下面描述的类型层次结构中的类型之一。
+* `(eql object)`
+    这个特化器要求实参等于给定的对象。
+* `(head object)`
+    参数必须是一个 cons cell，它的 car 与对象相等。
+* `struct-type`
+    参数必须是一个用 `cl-defstruct` 定义的名为struct-type的类的实例(参见GNU Emacs Lisp的公共Lisp扩展中的结构)，或者是它的一个子类的实例。
+
+方法定义可以使用一个新的参数列表关键字 `&context`，它引入了额外的专门化器，用于在方法运行时测试环境。这个关键字应该出现在必需参数列表之后，但在任何 `&rest` 或 `&optional` 关键字之前。`&context` 特化器看起来很像常规的参数特化器 `(expr spec)`，只不过 `expr` 是一个要在当前上下文中求值的表达式，而 `spec` 是一个要进行比较的值。例如，`&context (overwrite-mode (eql t))` 将使该方法仅在 `overwrite-mode` 打开时才适用。`&context` 关键字可以后跟任意数量的上下文特化器。因为上下文特化器不是泛型函数参数签名的一部分，所以在不需要它们的方法中可以省略它们。
+
+类型专门化符 `(arg type)` 可以指定以下列表中的一种系统类型。当指定父类型时，其类型为其更具体的子类型以及孙子、孙子等的参数也将是兼容的。
+
+* `integer`
+    父类型: number
+* `number`
+* `null`
+    父类型: symbol
+* `symbol`
+* `string`
+    父类型: array
+* `array`
+    父类型: sequence
+* `cons`
+    父类型: list
+* `list`
+    父类型: sequence
+* `marker`
+* `overlay`
+* `float`
+    父类型: number
+* `window-configuration`
+* `process`
+* `window`
+* `subr`
+* `compiled-function`
+* `buffer`
+* `char-table`
+    父类型: array
+* `bool-vector`
+    父类型: array
+* `vector`
+    父类型: array
+* `frame`
+* `hash-table`
+* `font-spec`
+* `font-object`
+
+可选的 `extra` 元素，表示为 `:extra string`，允许您为相同的特化器和限定符添加更多的方法，以字符串区分。
+
+可选 *限定符 qualifier* 允许组合几个适用的方法。如果不存在，则定义的方法是主方法，负责为专门化参数提供泛型函数的主要实现。你也可以定义 *辅助方法 auxiliary methods*，通过使用以下值之一作为 *限定符 qualifier*:
+
+* `:before`
+    此辅助方法将在主方法之前运行。更准确地说，所有:before方法都将以最具体的优先顺序在primary方法之前运行。
+* `:after`
+    此辅助方法将在主方法之后运行。更准确地说，所有这些方法都将在主方法之后以最具体的最后一个顺序运行。
+* `:around`
+    这个辅助方法将代替主方法运行。其中最具体的方法将在任何其他方法之前运行。这些方法通常使用下面描述的cl-call-next-method来调用其他辅助方法或主方法。
+
+使用 `cl-defmethod` 定义的函数 **不能** 通过添加交互式表单来实现交互，例如命令(参见定义命令 Defining Commands)。如果您需要一个多态命令，我们建议定义一个普通命令，该命令调用通过 `cl-defgeneric` 和 `cl-defmethod`定义的多态函数。
+
+每次调用泛型函数时，它都会构建有效的方法，该方法将通过组合为该函数定义的适用方法来处理此调用。寻找适用的方法并产生有效方法的过程称为 *调度 dispatch*。适用的方法是那些其专门化符都与调用的实际参数兼容的方法。因为所有的参数都必须与专门化符兼容，所以它们都决定一个方法是否适用。显式专门化多个参数的方法称为 *多调度方法 multiple-dispatch methods*。
+
+适用的方法按其组合的顺序进行排序。最左边的参数特殊化器是最具体参数的方法将按顺序排在前面。(如上所述，指定 `:argument-precedence-order` 作为 `cl-defmethod`的一部分将覆盖该顺序。)如果方法体调用 `cl-call-next-method`，则将运行下一个最特定的方法。如果有适用的 `:around` 方法，最具体的方法将首先运行;它应该调用 `cl-call-next-method` 来运行任何不太具体的 `:around` 方法。接下来是 `:before` 方法按照其特异性的顺序运行，其次是 `primary` 方法，最后是 `:after` 方法按照其特异性的相反顺序运行。
+
+#### 函数: `cl-call-next-method &rest args` ####
+
+当从 primary 或 `:around` 方法的 lexical body 中调用此函数时，为同一泛型函数调用下一个适用的方法。通常，调用它时不带参数，这意味着调用下一个适用的方法时使用调用方法时使用的相同参数。否则，将使用指定的参数。
+
+#### 函数: `cl-next-method-p` ####
+
+当从 primary 或 `:around` 方法的 lexical body 中调用此函数时，如果有下一个方法可调用，则返回非nil。
+
 ### 13.9 Accessing Function Cell Contents ###
 
+符号的函数定义是存储在该符号的函数单元中的对象。这里描述的函数 access、test 和 set 符号的函数单元。
+
+参见函数 `indirect-function` 。参见间接函数的定义 Definition of indirect-function。
+
+#### 函数: `symbol-function symbol` ####
+
+这将返回symbol函数单元格中的对象。它不检查返回的对象是否是一个合法的函数。
+
+如果函数单元格为空，则返回值为nil。要区分一个函数单元格是void还是nil，可以使用`fboundp`(见下文)。
+
+``` Elisp
+(defun bar (n) (+ n 2))
+(symbol-function 'bar)
+     ⇒ (lambda (n) (+ n 2))
+
+(fset 'baz 'bar)
+     ⇒ bar
+
+(symbol-function 'baz)
+     ⇒ bar
+```
+
+如果你从来没有给一个符号任何函数定义，我们说这个符号的函数单元是空的。换句话说，函数单元格中没有任何Lisp对象。如果您尝试将符号作为函数调用，Emacs将发出 `void-function` 错误信号。
+
+请注意，void 与nil或 symbol void不同。符号nil和void是Lisp对象，可以像其他对象一样存储在函数单元中(如果用defun定义void，它可以是一个有效的函数)。一个void函数单元不包含任何对象。
+
+您可以使用 `fboundp` 测试符号函数定义的空白性。在给符号一个函数定义之后，可以使用 `fmakunbound` 再次使其无效。
+
+#### 函数: `fboundp symbol` ####
+
+如果符号的函数单元格中有对象，则返回t，否则返回nil。它不检查对象是否为合法函数。
+
+#### 函数: `fmakunbound symbol` ####
+
+此函数使symbol的函数单元格为空，因此后续访问该单元格的尝试将导致void-function错误。它返回符号。(请参见当变量为Void时的makunbound。 When a Variable is Void)
+
+``` Elisp
+(defun foo (x) x)
+(foo 1)
+     ⇒1
+
+(fmakunbound 'foo)
+     ⇒ foo
+
+(foo 1)
+error→ Symbol's function definition is void: foo
+```
+
+#### 函数: `fset symbol definition` ####
+
+该函数将 definition 存储在符号的函数单元中。结果就是 definition。通常，definition 应该是一个函数或函数名，但这一点没有进行检查。参数符号是一个普通的求值参数。
+
+这个函数的主要用途是作为定义或修改函数的构造的子例程 subroutine，如defun或 `advice-add` (参见建议Emacs Lisp函数 Advising Emacs Lisp Functions)。你也可以用它给一个符号一个非函数的函数定义，例如，一个键盘宏(参见键盘宏):
+
+``` Elisp
+;; Define a named keyboard macro.
+(fset 'kill-two-lines "\^u2\^k")
+     ⇒ "\^u2\^k"
+```
+
+如果您希望使用fset为函数创建一个替代名称，请考虑使用 `defalias`。参见定义别名 Definition of defalias。
+
 ### 13.10 Closures ###
+
+[Closures](https://www.gnu.org/software/emacs/manual/html_node/elisp/Closures.html)
 
 ### 13.11 Open Closures ###
 
