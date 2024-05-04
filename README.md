@@ -1,20 +1,40 @@
-# SCAME
+# SCAME #
 
-learning emacs
+本库主要用于记录学习 Emacs 的相关知识
 
-学习 emacs
+## Emacs Official Tutorials ##
 
-## markdown-mode
-
-[markdown-mode.md](./markdown_mode.md)
-
-## 0 Emacs Tutorial
+### Emacs Quick Tutorial ###
 
 [quick-tutorial.md](./quick_tutorial.md)
 
-## 1 Elisp
+### An Introduction to Programming in Emacs Lisp ###
 
-[elisp-learn.md](./elisp_learn.md)
+《An Introduction to Programming in Emacs Lisp》 的学习
 
-## 2 The organization of the Screen 屏幕的布局
+an-introduction-to-programming-in-emacs-lisp
+
+[an-introduction-to-programming-in-emacs-lisp.md](./an-introduction-to-programming-in-emacs-lisp.md)
+
+### Emacs Lisp Reference Manual ###
+
+[emacs-lisp-reference-manual](emacs-lisp-reference-manual.md)
+
+### cc-mode ###
+
+[cc-mode-learn](./cc_mode_learn.md)
+
+### 学习配置 Emacs ###
+
+[learn_configure_emacs.md](learn_configure_emacs.md)
+
+## 第三方库 ##
+
+### markdown-mode ###
+
+[markdown-mode.md](./markdown_mode.md)
+
+### use-package ###
+
+[use_package_learn.md](use_package_learn.md)
 
