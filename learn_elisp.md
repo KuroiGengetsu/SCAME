@@ -1,3 +1,8 @@
+<!-- Local Variables: -->
+<!-- eval: (global-display-line-numbers-mode 0) -->
+<!-- eval: (flycheck-mode 0) -->
+<!-- eval: (company-mode -1) -->
+<!-- End: -->
 # 学习Elisp #
 
 [TOC]
@@ -12228,145 +12233,785 @@ error→ Symbol's function definition is void: foo
 
 [Closures](https://www.gnu.org/software/emacs/manual/html_node/elisp/Closures.html)
 
+正如 *变量绑定的作用域规则 Scoping Rules for Variable Bindings* 中所解释的，Emacs可以选择性地启用变量的词法绑定。当启用词法绑定时，您创建的任何命名函数(例如，使用defun)，以及使用lambda宏或函数特殊形式或 `#'` 语法(请参阅匿名函数)创建的任何匿名函数，都会自动转换为闭包 closure。
+
+闭包是一个函数，它还携带定义该函数时存在的词法环境的记录。当调用它时，其定义中的任何词法变量引用都使用保留的词法环境。在所有其他方面，闭包的行为与普通函数非常相似;特别是，它们可以以与普通函数相同的方式调用。
+
+有关使用闭包的示例，请参阅词法绑定 Lexical Binding。
+
+目前，Emacs Lisp闭包对象是由一个列表表示的，其中 符号闭包 closure 作为第一个元素，一个列表表示词法环境作为第二个元素，参数列表和主体形式作为其余元素:
+
+``` Elisp
+;; lexical binding is enabled.
+(lambda (x) (* x x))
+     ⇒ (closure (t) (x) (* x x))
+```
+
+然而，闭包的内部结构向Lisp世界的其他部分公开这一事实被认为是内部实现细节。由于这个原因，我们建议不要直接检查或修改闭包对象的结构。
+
 ### 13.11 Open Closures ###
+
+传统上，函数是 *不透明的对象 opaque objects*，除了调用它们之外不提供其他功能。(Emacs Lisp函数并不是完全不透明的，因为您可以从中提取一些信息，比如它们的文档字符串、参数列表或交互规范，但它们大部分仍然是不透明的。)这通常是我们想要的，但偶尔我们需要函数公开更多关于它们自己的信息。
+
+*开闭包 open closures*(简称 OClosures) 是函数对象，它携带额外的类型信息，并以 *插槽 slots* 的形式公开一些关于自身的信息，您可以通过 *访问器函数 accessor functions* 访问这些信息。
+
+OClosures 的定义分两个步骤:
+
+1. 首先使用 `oclosure-define` 通过指定该类型的 OClosure 所携带的槽来定义新的 OClosure 类型
+2. 然后使用 `oclosure-lambda` 创建给定类型的开闭包对象。
+
+假设我们想要定义键盘宏，即重新执行一系列键事件的交互函数(参见键盘宏 Keyboard Macros)。你可以用一个简单的函数来做，如下所示:
+
+``` Elisp
+(defun kbd-macro (key-sequence)
+  (lambda (&optional arg)
+    (interactive "P")
+    (execute-kbd-macro key-sequence arg)))
+```
+
+但是有了这样的定义，就没有简单的方法从函数中提取键序列，例如打印它。
+
+我们可以使用如下的开闭包来解决这个问题。首先，我们定义键盘宏的类型(我们决定在其中添加一个 计数器槽 counter):
+
+``` Elisp
+(oclosure-define kbd-macro
+  "Keyboard macro."
+  keys (counter :mutable t))
+```
+
+之后我们可以重写我们的 `kbd-macro` 函数:
+
+``` Elisp
+(defun kbd-macro (key-sequence)
+  (oclosure-lambda (kbd-macro (keys key-sequence) (counter 0))
+      (&optional arg)
+    (interactive "P")
+    (execute-kbd-macro keys arg)
+    (setq counter (1+ counter))))
+```
+
+正如您所看到的，可以从闭包的主体内部作为局部变量访问闭包的键和计数器槽。但是我们现在也可以从闭包体外部访问它们，例如描述一个键盘宏:
+
+``` Elisp
+(defun describe-kbd-macro (km)
+  (if (not (eq 'kbd-macro (oclosure-type km)))
+      (message "Not a keyboard macro")
+    (let ((keys    (kbd-macro--keys km))
+          (counter (kbd-macro--counter km)))
+      (message "Keys=%S, called %d times" keys counter))))
+```
+
+其中，`kbd-macro——keys` 和 `kbd-macro——counter` 是由宏 oclosure-define 为类型为 kbd-macro 的开闭包生成的访问器函数。
+
+#### 宏: `oclosure-define oname &optional docstring &rest slots` ####
+
+这个宏定义了一个新的 OClosure 类型及其槽的访问器函数。oname可以是一个符号(新类型的名称)，也可以是表单列表 `(oname . type-props)`，在这种情况下，`type-props` 是该开闭包类型的附加属性列表。slots 是一个slot描述列表，其中每个slot可以是一个符号(slot的名称)，也可以是形式 `(slot-name . slot-props)`，其中 `slot-props` 是对应槽 slot-name 的属性列表。由 `type-props` 指定的闭包类型属性可以包括以下内容:
+
+* `(:predicate pred-name)`
+    这使得类型 otype of closures成为类型onname的父类。类型为onname的开闭包继承其父类型定义的槽。
+* `(:copier copier-name copier-args)`
+    这导致定义了一个函数更新函数，称为copier，该函数将类型为onname的closure作为其第一个参数，并返回它的副本，其中在copier-args中命名的槽被修改为包含在实际调用copier-name时相应参数中传递的值。
+
+对于slots中的每个slot，宏 oclosure-define 创建一个名为 `onname——slot-name` 的访问器函数;这些可以用来访问槽的值。slot中的slot定义可以指定slot的以下属性:
+
+* `:mutable val`
+    默认情况下，slot是不可变的，但是如果你用一个非nil值指定 `:mutable` 属性，slot可以被改变，例如使用setf(参见setf宏)。
+* `:type val-type`
+    这指定了预期出现在槽中的值的类型。
+
+#### 宏: `Macro: oclosure-lambda (type . slots) arglist &rest body` ####
+
+这个宏创建一个 OClosure 类型的匿名开闭包，该开闭包应该用 `oclosure-define` 定义。slot应该是一个形式为 `(slot-name expr)` 的元素列表。在运行时，按顺序计算每个expr，然后创建closure，并用结果值初始化其槽。
+
+当作为函数调用时(参见调用函数)，由该宏创建的 OCclosure将根据arglist接受参数并执行代码体中的代码。Body可以直接引用其任意slot的值，就像它是静态作用域捕获的局部变量一样。
+
+#### 函数: `oclosure-type` ####
+
+如果对象是一个 OClosure，这个函数返回该对象的开闭包类型(一个符号)，否则返回nil。
+
+另一个与闭包相关的函数是 `oclosure-interactive-form`，它允许某些类型的闭包动态地计算它们的交互表单。看到 `oclosure-interactive-form`。
 
 ### 13.12 Advising Emacs Lisp Functions ###
 
+> 本节内容主要用于修改原始的函数或值，并且不改变原始的定义，例如在调用函数之前/之后加一个打印
+
+当你需要修改在另一个库中定义的函数时，或者当你需要修改钩子(比如foo函数、进程过滤器，或者基本上是任何保存函数值的变量或对象字段)时，你可以使用适当的setter函数，比如对命名函数使用fset或defun，对钩子变量使用setq，对进程过滤器使用set-process-filter，但是这些通常都太钝了，完全抛弃了之前的值。
+
+*通知特性 advice feature* 允许您通过 *通知函数 advising the function* 来添加到函数的现有定义中。这是一个比重新定义整个函数更简洁的方法。
+
+Emacs的通知系统为此提供了两组原语:
+
+1. *核心组 the core set*，用于保存在变量和对象字段中的函数值(对应的原语是 `add-function` 和 `remove-function`);
+2. 另一组在其之上的原语用于命名函数(主要的原语是 `advice-add` 和 `advice-remove`)。
+
+作为一个简单的例子，下面是如何添加 advice，在每次调用函数时修改函数的返回值:
+
+``` Elisp
+(defun my-double (x)
+  (* x 2))
+(defun my-increase (x)
+  (+ x 1))
+(advice-add 'my-double :filter-return #'my-double)
+```
+
+在添加这个 advice 之后，如果你用 3 调用my-double，返回值将是 7。要删除这个 advice，说
+
+``` Elisp
+(advice-remove 'my-double #'my-increase)
+```
+
+一个更高级的例子是跟踪对 process `proc` 的 process filter 的调用:
+
+``` Elisp
+(defun my-tracing-function (proc string)
+  (message "Proc %S received %S" proc string))
+
+(add-function :before (process-filter proc) #'my-tracing-function)
+```
+
+这将导致流程的输出在传递给原始流程过滤器之前先传递给 `my-tracing-function`。`my-tracing-function` 接收与原始函数相同的参数。当你完成它时，你可以使用以下命令恢复到未跟踪的行为:
+
+``` Elisp
+(remove-function (process-filter proc) #'my-tracing-function)
+```
+
+类似地，如果你想跟踪名为display-buffer的函数的执行，你可以使用:
+
+``` Elisp
+(defun his-tracing-function (orig-fun &rest args)
+  (message "display-buffer called with arg %S" args)
+  (let ((res (apply orig-fun args)))
+    (message "display-buffer returned %S" res)
+	res))
+
+(advice-add 'display-buffer :around #'his-tracing-function)
+```
+
+在这里，调用 `his-tracing-function` 而不是原始函数，并接收原始函数(以及该函数的参数)作为参数，因此它可以在需要时调用它。当你厌倦了看到这个输出时，你可以使用以下命令恢复到未跟踪的行为:
+
+``` Elisp
+(advice-remove 'display-buffer #'his-tracing-function)
+```
+
+上述示例中使用的参数 `:before` 和 `:around` 指定了如何组合这两个函数，因为有许多不同的方法可以组合。添加的函数也称为 a piece of advice。
+
+* Primitives to manipulate advices
+* Advising Named Functions
+* Ways to compose advice
+* Adapting code using the old defadvice
+* Advice and Byte Code
+
+#### 13.12.1 Primitives to manipulate advices ####
+
+操作通知的原语
+
+##### 宏: `add-function where place function &optional props` #####
+
+这个宏是一种方便的方式，可以将 advice `function` 添加到存储在 `place` 的函数中(参见通用变量 Generalized Variables)。
+
+`where` 决定 `function` 如何与现有函数组合，例如，函数应该在原函数之前还是之后调用。请参阅组合通知的方法 Ways ti compose advice，以获得组合这两个函数的可用方法列表。
+
+在修改变量(其名称通常以 `-function` 结尾)时，您可以选择是全局使用 `function`还是仅在当前缓冲区中使用:
+
+* 如果`place`只是一个符号，则将function添加到place的全局值中。
+* 如果`place`是 `(local symbol)` 的形式，其中symbol是返回变量名的表达式，则function将只添加到当前缓冲区中。
+* 最后，如果要修改词法变量，则必须使用 `(var variable)`。
+
+使用 `add-function` 添加的每个函数都可以伴随着属性 `props` 的关联列表。目前，这些属性中只有两个具有特殊含义:
+
+* `name`
+    这为 advice 提供了一个名称，`remove-function` 可以使用该名称来标识要删除的函数。通常在函数是匿名函数时使用。
+* `depth`
+    这指定了在存在多个 advice 时如何排序 advice。缺省情况下，深度为0。深度为100表示这条建议应该尽可能保持深度，而深度为−100表示它应该保持在最外层。当两个通知指定相同的深度时，最近添加的通知将位于最外层。
+
+* `:before`，最外层意味着这个advice将首先运行，在任何其他advice之前，而最内层意味着它将在原始函数之前运行，在它自己和原始函数之间没有其他 advice 运行。
+* `:after`, 最内层意味着它将在原始函数之后运行，中间没有其他通知，而最外层意味着它将在所有其他通知之后的最后运行。
+* 最内层的 `:override` 通知只会覆盖原始函数，其他通知也会应用于它，而最外层的 `:override` advice 不仅会覆盖原始函数，还会覆盖应用于它的所有其他 advice。
+
+如果函数不是交互的，那么合并后的函数将继承原始函数的 *交互规范 interactive spec*(如果有的话)。否则，合并后的函数将是交互式的，并将使用函数的交互式规范。
+
+一个例外:如果函数的交互规范是一个函数(即，lambda表达式或fbound符号，而不是表达式或字符串)，那么组合函数的交互规范将是对该函数的调用，原始函数的交互规范作为唯一参数。要将收到的规范解释为参数，请使用 `advice-eval-interactive-spec`。
+
+注意:函数的交互规范将适用于组合函数，因此应遵守组合函数的调用约定，而不是函数的调用约定。在许多情况下，这没有什么区别，因为它们是相同的，但对于 `:around`、`:filter-args`和 `:filter-return` 来说，这确实很重要，因为函数接收的参数与存储在原位的原始函数不同。
+
+##### 宏: `remove-function place function` #####
+
+这个宏从存储在适当位置的函数中删除函数。这只适用于使用 `add-function` 将函数添加到 place 的情况。
+
+function 与使用equal添加到place的函数进行比较，以尝试使其也适用于lambda表达式。它还会与添加到place的函数的name属性进行比较，这比使用equal比较lambda表达式更可靠。
+
+##### 函数: `advice-function-member-p advice function-def` #####
+
+如果 advice 已经在 `function-def` 中，则返回非nil。就像上面的 `remove-function` 一样，advice 不是实际的函数，它也可以是 a piece of advice 的名称。
+
+##### 函数: `advice-function-mapc f function-def` #####
+
+为每一条添加到 `function-def` 中的通知调用函数f。调用 `f` 时带两个参数:通知函数及其属性。
+
+##### 函数: `advice-eval-interactive-spec spec` #####
+
+对 interactive spec 进行运算，就像对具有此类 spec 的函数进行交互式调用一样，然后返回所构建的相应参数列表。例如，`(advice-eval-interactive-spec "r\nP")` 将返回一个包含三个元素的列表，其中包含区域的边界和当前前缀参数。
+
+例如，如果你想让 `C-x m` (compose-mail)命令提示符显示 From: 头，你可以这样说:
+
+``` Elisp
+(defun my-compose-mail-advice (orig &rest args)
+  "Read From: address interactively."
+  (interactive
+   (lambda (spec)
+     (let* ((user-mail-address
+             (completing-read "From: "
+                              '("one.address@example.net"
+                                "alternative.address@example.net")))
+            (from (message-make-from user-full-name
+                                     user-mail-address))
+            (spec (advice-eval-interactive-spec spec)))
+       ;; Put the From header into the OTHER-HEADERS argument.
+       (push (cons 'From from) (nth 2 spec))
+       spec)))
+  (apply orig args))
+
+(advice-add 'compose-mail :around #'my-compose-mail-advice)
+```
+
+#### 13.12.2 Advising Named Functions ####
+
+advice 的常见用途是用于命名函数和宏。你可以使用 `add-function` 如下所示:
+
+``` Elisp
+(add-function :around (symbol-function 'fun) #'his-tracing-function)
+```
+
+但是你应该使用 `advice-add` 和 `advice-remove`。这组单独的函数用于操作应用于命名函数的通知片段，与 `add-function` 相比，它们提供了以下额外的特性:
+
+* 它们知道如何处理宏和自动加载的函数
+* 它们允许 `describe-function` 保留原始的文档字符串以及记录添加的通知
+* 并且允许您在定义函数之前添加和删除通知。
+
+`advice-add` 对于更改对现有函数的现有调用的行为非常有用，而不必重新定义整个函数。然而，它可能是bug的来源，因为函数的现有调用者可能会假设旧的行为，并且在通过通知更改行为时不正确地工作。如果进行调试的人没有注意到或记住函数已被通知修改，则通知还会在调试中造成混乱。
+
+由于这些原因，advice 应该保留给不能以任何其他方式修改函数行为的情况。
+
+* 如果可以通过钩子做同样的事情，这是可取的(参见钩子 Hooks)。如果您只是想更改特定键的功能，那么最好编写一个新命令，并将旧命令的键绑定重新映射到新命令(请参阅重新映射命令 Remapping Commands)。
+
+如果您正在编写发布代码，供其他人使用，请尽量避免在其中包含 advice。如果你想建议的函数没有钩子来完成这项工作，请与Emacs开发人员讨论添加合适的钩子。特别是，Emacs自己的源文件不应该对Emacs中的函数提出建议。(目前这个惯例有一些例外，但我们的目标是纠正它们。)通常，在foo中创建一个新钩子，并让bar使用该钩子，比让bar在foo中放置advice更简洁。
+
+特殊形式不能添加 advice(参见特殊形式 Special Forms)，但是宏可以。当然，这不会影响已经进行宏展开的代码，因此您需要确保在宏展开之前安装通知。
+
+可以 advice 一个原语(参见什么是函数? What Is a Function?)，但通常不应该这样做，原因有两个。
+
+1. 首先，通知机制使用了一些原语，通知它们可能会导致无限递归。
+2. 其次，许多原语是直接从C语言调用的，这样的调用忽略了通知;因此，最终会出现一种令人困惑的情况，即一些调用(来自Lisp代码)遵守通知，而其他调用(来自C代码)不遵守通知。
+
+##### 宏: `define-advice symbol (where lambda-list &optional name depth) &rest body` #####
+
+这个宏定义了一条 advice，并将其添加到名为symbol的函数中。如果name为nil，则advice是一个匿名函数或名为 `symbol@name` 的函数。参见advice-add对其他参数的解释。
+
+##### 函数: `advice-add symbol where function &optional props` #####
+
+将advice函数添加到命名函数符号中。where和props的含义与add-function相同(参见操作通知的原语 Primitives to manipulate advices)。
+
+##### 函数: `advice-remove symbol function` #####
+
+从命名函数符号中删除通知函数。函数也可以是一条建议的名称。
+
+##### 函数: `advice-member-p function symbol` #####
+
+如果通知函数已经在命名函数符号中，则返回非nil。函数也可以是一条建议的名称。
+
+##### 函数: `advice-mapc function symbol` #####
+
+为添加到命名函数符号中的每个 advice 调用函数。函数调用时带两个参数:通知函数及其属性。
+
+#### 13.12.3 Ways to compose advice ####
+
+排版advice
+
+下面是add-function和advice-add的where参数可能的不同值，它们指定了建议函数和原始函数应该如何组合。
+
+##### `:before` #####
+
+在旧函数之前调用函数。两个函数接收相同的参数，复合函数的返回值是旧函数的返回值。更具体地说，这两个函数的组合行为如下:
+
+``` Elisp
+(lambda (&rest r) (apply function r) (apply oldfun r))
+```
+
+`(add-function :before funvar function)` 对于单函数钩子和 `(add-hook 'hookvar function)` 对于普通钩子是可比较的。
+
+##### `:after` #####
+
+在旧函数之后调用函数。两个函数接收相同的参数，复合函数的返回值是旧函数的返回值。更具体地说，这两个函数的组合行为如下:
+
+``` Elisp
+(lambda (&rest r) (prog1 (apply oldfun r) (apply function r)))
+```
+
+`(add-function :after funvar function)` 对于单函数钩子和 `(add-hook 'hookvar function 'append)` 对于普通钩子是可比较的。
+
+##### `:override` #####
+
+这完全用信函数取代了旧的函数。如果稍后调用remove-function，当然可以恢复旧的函数。
+
+
+##### `:around` #####
+
+调用function而不是旧函数，但将旧函数作为函数的额外参数提供。这是最灵活的构图。例如，它允许您使用不同的参数或多次调用旧函数，或者在let-binding中调用旧函数，或者您有时可以将工作委托给旧函数，有时可以完全覆盖它。更具体地说，这两个函数的组合行为如下:
+
+``` Elisp
+(lambda (&rest r) (apply function oldfun r))
+```
+
+##### `:before-while` #####
+
+在旧函数之前调用函数，如果函数返回nil，不要调用旧函数。两个函数接收相同的参数，复合函数的返回值是旧函数的返回值。更具体地说，这两个函数的组合行为如下:
+
+``` Elisp
+(lambda (&rest r) (and (apply function r) (apply oldfun r)))
+```
+
+当通过 `run-hook-with-args-until-failure` 运行hookvar时，`(add-function :before-while funvar function)`与 `(add-hook 'hookvar function)`是可比较的单函数钩子。
+
+##### `:before-until` #####
+
+在旧函数之前调用函数，并且只在函数返回nil时调用旧函数。更具体地说，这两个函数的组合行为如下:
+
+``` Elisp
+(lambda (&rest r) (or (apply function r) (apply oldfun r)))
+```
+
+当通过 `run-hook-with-args-until-success` 运行hookvar时，`(add-function :before-until funvar function)` 与 `(add-hook 'hookvar function)` 的单函数钩子是相似的。
+
+##### `:after-while` #####
+
+在旧函数之后调用函数，并且仅当旧函数返回非nil时才调用函数。两个函数接受相同的参数，组合的返回值是函数的返回值。更具体地说，这两个函数的组合行为如下:
+
+``` Elisp
+(lambda (&rest r) (and (apply oldfun r) (apply function r)))
+```
+
+当通过 `run-hook-with-args-until-failure` 运行hookvar时，`(add-function :after-while funvar function)` 与 `(add-hook 'hookvar function 'append)` 对于单函数钩子是类似的。
+
+##### `:after-until` #####
+
+在旧函数之后调用函数，并且仅当旧函数返回nil时才调用函数。更具体地说，这两个函数的组合行为如下:
+
+``` Elisp
+(lambda (&rest r) (or  (apply oldfun r) (apply function r)))
+```
+
+当通过 `run-hook-with-args-until-success` 运行hookvar时，`(add-function :after-until funvar function)` 与 `(add-hook 'hookvar function 'append)` 对于单函数钩子是相似的。
+
+##### `:filter-args` #####
+
+首先调用function并使用结果(应该是一个列表)作为传递给旧函数的新参数。更具体地说，这两个函数的组合行为如下:
+
+``` Elisp
+(lambda (&rest r) (apply oldfun (funcall function r)))
+```
+
+##### `:filter-return` #####
+
+首先调用旧函数并将结果传递给函数。更具体地说，这两个函数的组合行为如下:
+
+``` Elisp
+(lambda (&rest r) (funcall function (apply oldfun r)))
+```
+
+#### 13.12.4 Adapting code using the old defadvice ####
+
+许多代码使用旧的默认通知机制，而新的advice-add在很大程度上取代了旧的默认通知机制，因为新的advice-add的实现和语义要简单得多。
+
+一条旧的 advice，如:
+
+``` Elisp
+(defadvice previous-line (before next-line-at-end
+                                 (&optional arg try-vscroll))
+  "Insert an empty line when moving up from the top line."
+  (if (and next-line-add-newlines (= arg 1)
+           (save-excursion (beginning-of-line) (bobp)))
+      (progn
+        (beginning-of-line)
+        (newline))))
+```
+
+可以在新的 advice 机制中转换成一个普通函数:
+
+``` Elisp
+(defun previous-line--next-line-at-end (&optional arg try-vscroll)
+  "Insert an empty line when moving up from the top line."
+  (if (and next-line-add-newlines (= arg 1)
+           (save-excursion (beginning-of-line) (bobp)))
+      (progn
+        (beginning-of-line)
+        (newline))))
+```
+
+显然，这实际上并没有修改前一行。要做到这一点，老的建议是:
+
+``` Elisp
+(ad-activate 'previous-line)
+```
+
+鉴于新的通知机制需要:
+
+``` Elisp
+(advice-add 'previous-line :before #'previous-line--next-line-at-end)
+```
+
+注意，ad-activate具有全局效应:它激活为指定功能启用的所有通知。如果您只想激活或禁用特定的部分，则需要使用ad-enable-advice和ad-disable-advice来启用或禁用它。新机制消除了这种区别。
+
+围绕以下建议:
+
+``` Elisp
+(defadvice foo (around foo-around)
+  "Ignore case in `foo'."
+  (let ((case-fold-search t))
+    ad-do-it))
+(ad-activate 'foo)
+```
+
+可以翻译成:
+
+``` Elisp
+(defun foo--foo-around (orig-fun &rest args)
+  "Ignore case in `foo'."
+  (let ((case-fold-search t))
+    (apply orig-fun args)))
+(advice-add 'foo :around #'foo--foo-around)
+```
+
+关于通知的类，请注意新的 `:before` 并不完全等同于旧的before，因为在旧的通知中，你可以修改函数的参数(例如，使用 `ad-set-arg`)，这将影响原始函数看到的参数值，而在新的 `:before` 中，通过通知中的setq修改参数对原始函数看到的参数没有影响。当移植依赖于此行为的before通知时，您需要将其转换为新的 `:around` 或 `:filter-args` 通知。
+
+类似地，旧的 `after`通知可以通过更改 `ad-return-value` 来修改返回值，而新的 `:after` 通知则不能，因此在移植此类旧 after通知时，您需要将其转换为新的 `:around` 或 `:filter-return` 通知。
+
+#### 13.12.5 Advice and Byte Code ####
+
+并非所有功能都可以可靠地提供建议。字节编译器可能会选择用不调用您想要更改的函数的指令序列来替换对函数的调用。
+
+这通常是由于以下三种机制之一造成的:
+
+##### byte-compile properties #####
+
+如果函数的符号具有 *byte-compile* 属性，则将使用该属性而不是符号的函数定义。参见字节编译函数 Byte-compilation Functions。
+
+##### byte-optimize properties #####
+
+如果函数的符号具有字节优化属性，字节编译器可能会重写函数参数，或者决定完全使用不同的函数。
+
+##### compiler-macro declare forms #####
+
+函数可以在其定义中具有特殊的编译器宏声明形式(参见声明形式 The declare Form)，该声明形式定义了在编译函数时要调用的展开器。扩展器可能会导致生成的字节码不调用原始函数。
+
 ### 13.13 Declaring Functions Obsolete ###
+
+声明过时的函数
+
+声明函数过时可以将命名函数标记为 *过时 obsolete*，这意味着它可能在将来的某个时候被删除。这导致Emacs在对包含该函数的代码进行字节编译时，以及在显示该函数的文档时，都会警告该函数已经过时。在所有其他方面，过时的函数的行为与任何其他函数一样。
+
+将函数标记为过时的最简单方法是在函数的defun定义中放入 `(declare (obsolete ...)`)形式。见 The declare Form。或者，您可以使用下面描述的 `make-obsolete` 函数。
+
+宏(参见宏)也可以用make-obsolete标记为obsolete;这与函数的效果相同。函数或宏的别名也可以标记为obsolete;这使得别名本身过时，而不是它解析到的函数或宏。
+
+##### 函数: `make-obsolete obsolete-name current-name when` #####
+
+这个函数将 `obsolete-name` 标记为obsolete。`obsolete-name` 应该是一个命名函数或宏的符号，或者函数或宏的别名。
+
+如果 `current-name` 是一个符号，则警告消息要求使用 `current-name` 而不是 `obsolete-name`。`current-name` 不需要是 `obsolete-name` 的别名;它可以是具有相似功能的不同函数。`current-name` 也可以是一个字符串，用作警告消息。消息应该以小写字母开头，以句号结尾。它也可以是nil，在这种情况下，警告消息不提供额外的详细信息。
+
+参数 `when` 应该是一个字符串，表示函数首次过时的时间——例如，日期或发布号。
+
+##### 宏: `define-obsolete-function-alias obsolete-name current-name when &optional doc` #####
+
+这个便利宏将函数 `obsolete-name` 标记为obsolete，并将其定义为函数current-name的别名。它相当于以下内容:
+
+``` Elisp
+(defalias obsolete-name current-name doc)
+(make-obsolete obsolete-name current-name when)
+```
+
+另外，你可以将函数的特定调用约定标记为obsolete:
+
+##### 函数: `set-advertised-calling-convention function signature when` #####
+
+此函数将参数列表签名指定为调用函数的正确方式。这将导致Emacs字节编译器在遇到以其他方式调用函数的Emacs Lisp程序时发出警告(但是，它仍然允许对代码进行字节编译)。when应该是一个字符串，表示变量第一次被废弃的时间(通常是一个版本号字符串)。
+
+例如，在旧版本的Emacs中，`sit-for` 函数接受三个参数，如下所示
+
+``` Elisp
+(sit-for seconds milliseconds nodisp)
+```
+
+然而，以这种方式调用 `sit-for` 被认为是过时的(参见等待经过时间或输入 Waiting for Elapsed Time or Input)。旧的调用约定被弃用如下:
+
+``` Elisp
+(set-advertised-calling-convention
+  'sit-for '(seconds &optional nodisp) "22.1")
+```
+
+使用此函数的替代方法是 `advertised-caling-convention` declare spec，请参阅声明表单 The declare Form。
 
 ### 13.14 Inline Functions ###
 
+内联函数是一种与普通函数一样工作的函数，除了一件事:当您对函数的调用进行字节编译时(请参阅字节编译 Byte Compilation)，函数的定义扩展到调用方。
+
+定义内联函数的简单方法是编写`defsubst`而不是defun。定义的其余部分看起来是一样的，但是使用`defsubst`表示将其内联用于字节编译。
+
+#### 宏: `defsubst name args [doc] [declare] [interactive] body...` ####
+
+这个宏定义了一个内联函数。它的语法与defun完全相同(参见定义函数 Defining Functions)。
+
+将函数内联通常会使其函数调用运行得更快。但它也有缺点。
+
+1. 首先，它降低了灵活性;如果更改了函数的定义，已经内联的调用在重新编译之前仍然使用旧的定义。
+2. 另一个缺点是，使大型函数内联可能会增加文件和内存中编译代码的大小。由于内联函数的速度优势对于小函数是最大的，所以通常不应该将大函数内联。
+3. 此外，内联函数在调试、跟踪和 advice 方面表现不佳(参见建议Emacs Lisp函数
+)。由于易于调试和重新定义函数的灵活性是Emacs的重要特性，所以不应该将函数内联，即使它很小，除非它的速度非常重要，并且您已经对代码进行了计时，以验证使用defun确实存在性能问题。
+
+定义内联函数后，可以在稍后的同一文件中执行其内联展开，就像宏一样。
+
+可以使用`defmacro`来定义一个宏，将其扩展为与内联函数执行的代码相同的代码(参见宏)。但是，宏将被限制在表达式中直接使用—不能通过apply、mapcar等调用宏。此外，将普通函数转换为宏也需要一些工作。将其转换为内联函数很容易;只需将defun替换为defsubst。由于内联函数的每个参数只求值一次，因此不必像处理宏那样担心函数体使用这些参数的次数。
+
+或者，您可以通过提供将其内联为编译器宏的代码来定义函数(参见声明表单 The deckare Form)。下面的宏可以实现这一点。
+
+#### 宏: `define-inline name args [doc] [declare] body...` ####
+
+通过提供内联函数的代码(作为编译器宏)来定义函数名。该函数将接受参数列表args，并具有指定的函数体。
+
+如果存在，doc应该是函数的文档字符串(参见函数的文档字符串);declare，如果存在的话，应该是一个声明形式(参见声明形式)，指定函数的元数据 metadata。
+
+与由`defsubst`或`defmacro`定义的宏相比，通过`define-inline`定义的函数有几个优点:
+
+* 它们可以传递给`mapcar`(参见映射函数)。
+* 他们更有效率。
+* 它们可以用作 *place forms* 来存储值(参见通用变量 Generalized Variables)。
+* 它们的行为比 `cl-defsubst` 更可预测(参见GNU Emacs Lisp的公共Lisp扩展中的参数列表 Argument List)。
+
+与`defmacro`类似，使用`define-inline`内联的函数从调用站点继承动态或词法范围规则。参见变量绑定的作用域规则。
+
+以下宏应该在`define-inline`定义的函数体中使用。
+
+#### 宏: `inline-quote expression` ####
+
+`define-inline`的引用表达式。这类似于反引号(参见反引号 Backquote)，但只引用代码，并且只接受 `,,` 而不接受，`@`。
+
+#### 宏: `inline-letevals (bindings...) body...` ####
+
+这提供了一种方便的方法来确保内联函数的参数只求值一次，以及创建局部变量。
+
+它类似于`let`(参见局部变量):它按照绑定指定的方式设置局部变量，然后在这些绑定生效的情况下计算body。
+
+绑定的每个元素要么是一个符号，要么是如下形式的列表 `(var expr)`;结果是计算expr并将var绑定到结果。然而，当绑定的元素只是一个符号var时，求值var的结果被重新绑定到var(这与let的工作方式完全不同)。
+
+绑定的尾部可以是nil，也可以是一个应该保存参数列表的符号，在这种情况下，每个参数都被求值，并且符号被绑定到结果列表。
+
+#### 宏: `inline-const-p expression` ####
+
+如果表达式的值已知，则返回非空值。
+
+#### 宏: `inline-const-val expression` ####
+
+返回 expression 的值。
+
+#### 宏: `inline-error format &rest args` ####
+
+发出错误信号，根据format格式化参数。
+
+下面是一个使用define-inline的例子:
+
+``` Elisp
+(define-inline myaccessor (obj)
+  (inline-letevals (obj)
+    (inline-quote (if (foo-p ,obj) (aref (cdr ,obj) 3) (aref ,obj 2)))))
+```
+
+这个等价于
+
+``` Elisp
+(defsubst myaccessor (obj)
+  (if (foo-p obj) (aref (cdr obj) 3) (aref obj 2)))
+```
+
 ### 13.15 The declare Form ###
+
+declare是一个特殊的宏，可用于向函数或宏添加元属性:例如，将其标记为过时的，或者在Emacs Lisp模式下为其形式提供特殊的TAB缩进约定。
+
+#### 宏: `declare specs...` ####
+
+这个宏忽略它的参数并求值为nil;它没有运行时效果。然而，当声明形式出现在defun或defsubst函数定义(参见定义函数)或defmacro宏定义(参见定义宏)的declare参数中时，它会将 specs 指定的属性附加到函数或宏中。这项工作是由defun、defsubst和defmacro专门执行的。
+
+specs中的每个元素都应该有这样的形式 `(property args...)`，它不应该被 quoted。它们有以下效果:
+
+##### `(advertised-calling-convention signature when)` #####
+
+这类似于对 `set-advertised-calling-convention` 的调用(参见声明过时函数);
+
+*signature* 为调用函数或宏指定正确的参数列表，when应该是一个字符串，表示旧的参数列表首次被淘汰的时间。
+
+##### `(debug edebug-form-spec)` #####
+
+这只对宏有效。当使用Edebug逐步执行宏时，请使用 `edebug-form-spec`。参见检测宏调用 Instrumenting Macro Calls。
+
+##### `(doc-string n)` #####
+
+这在定义函数或宏时使用，这些函数或宏本身将用于定义函数、宏或变量等实体。它表明第n个参数(如果有的话)应该被视为文档字符串。
+
+##### `(indent indent-spec)` #####
+
+根据缩进规范调用此函数或宏。这通常用于宏，但它也适用于函数。参见缩进宏 Indenting Macros。
+
+##### `(interactive-only value)` #####
+
+将函数的 `interactive-only` 属性设置为value。参见interactive-only属性 The interactive-only property。
+
+##### `(obsolete current-name when)` #####
+
+将函数或宏标记为obsolete，类似于make-obsolete的调用(参见声明函数obsolete)。current-name应该是一个符号(在这种情况下，警告消息说要使用它)，一个字符串(指定警告消息)，或者nil(在这种情况下，警告消息没有提供额外的细节)。When应该是一个字符串，表示函数或宏首次被废弃的时间。
+
+##### `(compiler-macro expander)` #####
+
+这只能用于函数，并告诉编译器将expander用作优化函数。当遇到对函数的调用时，形式为 `(function args...)`，宏扩展器将使用该形式以及 `args...`调用expander, expander可以返回一个新的表达式来代替函数调用，或者它可以只返回不变的形式，以表明函数调用应该单独保留。
+
+当expander是lambda形式时，它应该使用单个参数(即 `(lambda (arg) body)`的形式)编写，因为函数的形式参数会自动添加到lambda的参数列表中。
+
+##### `(gv-expander expander)` #####
+
+将`expander`声明为处理宏(或函数)调用的函数，作为通用变量 generalized variable，类似于 `gv-define-expander`。expander可以是一个符号，也可以是 `(lambda (arg) body)` 的形式，在这种情况下，函数将额外访问宏(或函数)的参数。
+
+##### `(gv-setter setter)` #####
+
+将setter声明为作为通用变量处理对宏(或函数)调用的函数。setter可以是一个符号，在这种情况下，它将被传递给 `gv-define-simple-setter`，或者它可以是 `(lambda (arg) body)`的形式，在这种情况下，函数将额外访问宏(或函数)的参数，它将被传递给 `gv-define-setter`。
+
+##### `(completion completion-predicate)` #####
+
+将 `completion-predicate` 声明为函数，以确定在 `M-x` 中请求补全时是否将函数的符号包含在函数列表中。只有当 `read-extended-command-predicate` 被定制为 `command-completion-default-include-p` 时，这个谓词函数才会被调用;缺省情况下，`read-extended-command-predicate` 的值为nil(参见execute-extended-command)。用两个参数调用谓词补全谓词:函数的符号和当前缓冲区。
+
+##### `(modes modes)` #####
+
+指定此命令仅适用于指定的模式。请参见指定命令的模式 Specifying Modes For Commands。
+
+##### `(interactive-arg arg ...)` #####
+
+指定应该为 `repeat-command` 存储的参数。每个参数都在参数名称表单中。
+
+##### `(pure val)` #####
+
+如果val非nil，则此函数为纯函数(参见什么是函数? What Is a Function?)
+
+这与函数符号的pure属性相同(参见标准符号属性 Standard Symbol Properties)。
+
+##### `(side-effect-free val)` #####
+
+如果val非nil，则此函数没有副作用，因此字节编译器可以忽略其值被忽略的调用。这与函数符号的 `side-effect-free` 属性相同，请参阅标准符号属性 Standard Symbol Properties。
+
+##### `(speed n)` #####
+
+为此函数的本机编译指定 `native-comp-speed` 的值(请参阅本机编译变量 Native-Compilation Variables)。这允许对为函数发出的本机代码所使用的优化级别进行函数级控制。特别是，如果n为 `-1`，函数的本机编译将发出字节码而不是函数的本机代码。
+
+##### `no-font-lock-keyword` #####
+
+这只对宏有效。具有此声明的宏被 `font-lock`(参见Font Lock Mode)作为普通函数高亮显示，而不是特别作为宏。
 
 ### 13.16 Telling the Compiler that a Function is Defined ###
 
+对文件进行字节编译通常会产生关于编译器不知道的函数的警告(参见编译器错误 Compiler Errors)。有时这表明了一个真正的问题，但通常有问题的函数是在其他文件中定义的，如果运行该代码，这些文件将被加载。例如，字节编译 `simple.el` 用来警告:
+
+``` log
+simple.el:8727:1:Warning: the function ‘shell-mode’ is not known to be
+    defined.
+```
+
+实际上，shell-mode 只在调用shell模式之前执行 `(require 'shell)` 的函数中使用，因此shell模式将在运行时正确定义。当您知道这样的警告并不表示真正的问题时，最好抑制警告 suppress the warning。这使得可能意味着真正问题的新警告更加明显。您可以使用declare-function来实现这一点。
+
+你所需要做的就是在第一次使用该函数之前添加一个declare-function语句:
+
+``` Elisp
+(declare-function shell-mode "shell" ())
+```
+
+这说明shell模式是在 `shell.el` 中定义的。(`.el` 可以省略)。编译器理所当然地认为该文件确实定义了函数，而不进行检查。
+
+可选的第三个参数指定 `shell-mode` 的参数列表。在这种情况下，它不接受任何参数(nil与不指定值不同)。在其他情况下，这可能类似于 `(file &optional overwrite)`。您不必指定参数列表，但如果指定了，字节编译器可以检查调用是否与声明匹配。
+
+#### 宏: `declare-function function file &optional arglist fileonly` ####
+
+告诉字节编译器假设该函数在文件 file 中定义。可选的第三个参数arglist要么是t，这意味着参数列表未指定，要么是与defun风格相同的形式参数列表(包括括号)。省略的参数列表默认为t，而不是nil;这是省略参数的非典型行为，这意味着要提供第四个而不是第三个参数，必须为第三个参数占位符指定t，而不是通常的nil。可选的第四个参数fileonly non-nil意味着只检查该文件是否存在，而不检查它是否真正定义了函数。
+
+要验证这些函数是否真的在 `declare-function` 声明的位置声明，可以使用 `check-declare-file` 检查一个源文件中的所有 `declare-function` 调用，或者使用 `check-declare-directory` 检查某个目录中的所有文件。
+
+这些命令使用 `location-library` 查找应该包含函数定义的文件;如果没有找到文件，它们就展开定义文件名，相对于包含 `declare-function` 调用的文件的目录。
+
+您还可以通过指定以 `.c` 或 `.m` 结尾的文件名来说明函数是一个原语。这只有在调用仅在某些系统上定义的原语时才有用。大多数原语总是被定义的，所以它们永远不会给你一个警告。
+
+有时，文件会选择性地使用外部包中的函数。如果在 `declare-function` 语句中使用 `ext:` 作为文件名的前缀，则会检查它是否找到，否则会跳过，不会出错。
+
+有一些函数定义 `check-declare` 不理解(例如，defstruct和其他一些宏)。在这种情况下，可以向 `declare-function` 传递一个非nil的fileonly参数，这意味着只检查文件是否存在，而不检查它是否实际定义了函数。请注意，要做到这一点而不必指定参数列表，您应该将arglist参数设置为t(因为nil意味着空参数列表，而不是未指定的参数列表)。
+
 ### 13.17 Determining whether a Function is Safe to Call ###
 
+一些主要模式(如SES)调用存储在用户文件中的函数。(有关ses的更多信息，请参见(ses)Simple Emacs Spreadsheet。)用户文件有时有着糟糕的血统——你可以从你刚认识的人那里得到一个电子表格，或者你可以从你从未见过的人那里通过电子邮件得到一个电子表格。因此，调用源代码存储在用户文件中的函数是有风险的，除非您确定它是安全的。
+
+#### 函数: `unsafep form &optional unsafep-vars` ####
+
+如果form是一个安全的Lisp表达式，则返回nil，或者返回一个描述为什么它可能不安全的列表。参数 `unsafep-vars` 是目前已知具有临时绑定的符号列表;它主要用于内部递归调用。当前缓冲区是一个隐式参数，它提供了一个缓冲区本地绑定列表。
+
+由于快速和简单，unsafep只做了很少的分析，并拒绝了许多实际上是安全的Lisp表达式。对于不安全表达式，没有已知的unsafe返回nil的情况。然而，一个安全的Lisp表达式可以返回一个带有display属性的字符串，其中包含一个相关的Lisp表达式，该表达式将在字符串插入缓冲区后执行。这种相关的表达可以是病毒。为了安全起见，必须在将用户代码计算的所有字符串插入缓冲区之前删除它们的属性。
+
 ### 13.18 Other Topics Related to Functions ###
+
+下面是几个函数的表，这些函数做与函数调用和函数定义相关的事情。它们在其他地方有记录，但我们在这里提供交叉参考。
+
+* `apply`
+    See Calling Functions.
+* `autoload`
+    See Autoload.
+* `call-interactively`
+    See Interactive Call.
+* `called-interactively-p`
+    See Distinguish Interactive Calls.
+* `commandp`
+    See Interactive Call.
+* `documentation`
+    See Access to Documentation Strings.
+* `eval`
+    See Eval.
+* `funcall`
+    See Calling Functions.
+* `function`
+    See Anonymous Functions.
+* `ignore`
+    See Calling Functions.
+* `indirect-function`
+    See Symbol Function Indirection.
+* `interactive`
+    See Using interactive.
+* `interactive-p`
+    See Distinguish Interactive Calls.
+* `mapatoms`
+    See Creating and Interning Symbols.
+* `mapcar`
+    See Mapping Functions.
+* `map-char-table`
+    See Char-Tables.
+* `mapconcat`
+    See Mapping Functions.
+* `undefined`
+    See Functions for Key Lookup. 
+
+## 14 Macros ##
+
+[Macros](https://www.gnu.org/software/emacs/manual/html_node/elisp/Macros.html)
+
+## 22 Command Loop ##
+
+[Command Loop](https://www.gnu.org/software/emacs/manual/html_node/elisp/Command-Loop.html)
+
+## 28 Buffers ##
+
+[Buffers](https://www.gnu.org/software/emacs/manual/html_node/elisp/Buffers.html)
 
 ---
 
 (global-display-line-numbers-mode 0)
 
 <!-- -*- global-display-line-numbers-mode: 1; -*- -->
-
-#### 宏: `` ####
-
-#### 函数: `` ####
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
-
-#### 函数: `` ####
-
-
