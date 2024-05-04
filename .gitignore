@@ -1,3 +1,8 @@
 # 隐藏 emacs 的日志文件
 *.*~
 
+# 隐藏目录
+backups/
+test/
+.emacs.d*
+

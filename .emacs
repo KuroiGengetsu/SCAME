@@ -8,6 +8,11 @@
 ;; 本文件为
 ;; D:/Coding/MyGithub/SCAME/.emacs
 
+(defun open-init-file ()
+  "Open .emacs ."
+  (interactive)
+  (find-file "D:/Coding/MyGithub/SCAME/.emacs"))
+
 ;;; code:
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 镜像 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;; 配置国内镜像
@@ -43,6 +48,7 @@
 ;;;; neotree
 (use-package neotree
   :ensure t
+  :defer 5
   :config (global-set-key [f8] 'neotree-toggle)  ;; 设置 f8 来打开/关闭 neotree
   (setq neo-smart-open t))
 
@@ -50,6 +56,7 @@
 ;;;; Emacs菜单栏下显示文件名
 (use-package centaur-tabs
   :ensure t
+  :defer 6
   :config
   (setq centaur-tabs-style "bar"
     centaur-tabs-height 22
@@ -131,11 +138,13 @@
 ;;;; 括号颜色
 (use-package highlight-parentheses
   :ensure t
+  :defer 7
   :init (highlight-parentheses-mode))
 
 ;;;; 自动补全 company-mode
 (use-package company
   :ensure t  ;; 确保被安装
+  :defer 8
   :init (global-company-mode)
   :config
   (setq company-minimum-prefix-length 1)  ;; 只需敲 1 个字母就开始进行自动补全
@@ -149,7 +158,11 @@
 ;;;; flycheck语法纠错
 (use-package flycheck
   :ensure t
+  :defer 9
   :init (global-flycheck-mode))
+
+;;;; Emacs 备份文件目录
+(setq backup-directory-alist (quote (("." . "E:\\softwares\\emacs\\emacs-backup-files"))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; C语言 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;; CC-mode
@@ -199,6 +212,7 @@
 
 ;;;; pyim
 (use-package pyim
+  :defer 13
   :ensure t
   :config (pyim-basedict-enable)
   (setq default-input-method "pyim"))
@@ -215,6 +229,22 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 命令类 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (fset 'yes-or-no-p 'y-or-n-p)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 工具类 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(use-package wgrep
+  :defer 10
+  :ensure t)
+(use-package s
+  :defer 11
+  :ensure t)
+(use-package transient
+  :defer 12
+  :ensure t)
+(use-package ripgrep
+  :ensure t
+  :defer 13
+  :after (wgrep s transient)
+  :config (global-set-key (kbd "C-c s") #'rg-menu))
 
 (provide 'emacs)
 ;;; .emacs ends here
