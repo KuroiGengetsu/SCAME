@@ -9126,7 +9126,7 @@ while形式的值总是nil。
          (forward-line 1)
 		 (not (looking-at "^$"))))
 ```
-	
+
 它向前移动一行，并继续逐行移动，直到到达空行。它的特殊之处在于，while没有主体，只有end test(它也做移动点的实际工作)。
 
 dolist和dotimes宏为编写两种常见的循环提供了方便的方法。
@@ -13002,13 +13002,507 @@ simple.el:8727:1:Warning: the function ‘shell-mode’ is not known to be
 
 [Macros](https://www.gnu.org/software/emacs/manual/html_node/elisp/Macros.html)
 
+宏使您能够定义新的控件结构和其他语言特性。宏的定义很像函数，但它不是告诉如何计算一个值，而是告诉如何计算另一个Lisp表达式，该表达式将依次计算该值。我们称这个表达式为宏的展开。
+
+宏可以做到这一点，因为它们对参数的未求值表达式进行操作，而不是像函数那样对参数值进行操作。因此，它们可以构造一个包含这些参数表达式或它们的一部分的展开。
+
+如果您使用宏来完成普通函数可以完成的任务，只是为了提高速度，请考虑使用内联函数。参见内联函数 Inline Functions。
+
+
+* A Simple Example of a Macro
+* Expansion of a Macro Call
+* Macros and Byte Compilation
+* Defining Macros
+* Common Problems Using Macros
+* Indenting Macros
+
+### 14.1 A Simple Example of a Macro ###
+
+假设我们想要定义一个Lisp结构来增加变量值，就像c中的++操作符一样，我们想要写 `(inc x)` 并具有 `(setq x (1+ x))` 的效果。这里有一个宏定义:
+
+``` Elisp
+(defmacro inc (var)
+   (list 'setq var (list '1+ var)))
+```
+
+当使用 `(inc x)` 调用该函数时，参数var是符号x，而不是函数中x的值。宏的主体使用它来构造展开，即 `(setq x (1+ x))`。一旦宏定义返回这个展开，Lisp继续对其求值，从而使x递增。
+
+#### 函数: `macrop object` ####
+
+该谓词测试其参数是否为宏，如果是则返回t，否则返回nil。
+
+### 14.2 Expansion of a Macro Call ###
+
+宏调用看起来就像函数调用，因为它是一个以宏名称开头的列表。列表中其余的元素是宏的参数。
+
+宏调用的求值开始与函数调用的求值类似，除了一个关键的区别:**宏参数是宏调用中出现的实际表达式**。在将它们赋给宏定义之前，不会对它们求值。相反，函数的实参是对函数调用列表中的元素求值的结果。
+
+获得参数后，Lisp调用宏定义，就像调用函数一样。宏的参数变量被绑定到宏调用的参数值，或者在 `&rest` 参数的情况下绑定到它们的列表。宏体执行并返回它的值，就像函数体一样。
+
+宏和函数之间的第二个关键区别是宏主体返回的值是另一个Lisp表达式，也称为宏的扩展。Lisp解释器从宏返回后立即对展开进行求值。
+
+由于展开是以正常方式计算的，因此它可能包含对其他宏的调用。它甚至可能是对同一个宏的调用，尽管这是不寻常的。
+
+注意，Emacs在加载未编译的Lisp文件时会尝试展开宏。这并不总是可能的，但如果是，它会加快后续的执行。请参阅程序如何加载 How Programs Do Loading。
+
+您可以通过调用`macroexpand`来查看给定宏调用的展开。
+
+#### 函数: `macroexpand form &optional environment` ####
+
+如果是宏调用，则该函数展开形式。如果结果是另一个宏调用，则依次展开它，直到结果不是宏调用。这是macroexpand返回的值。如果form不是宏调用的起始点，则返回它。
+
+注意，`macroexpand` 不查看 form 的子表达式(尽管一些宏定义可能会查看)。即使它们本身是宏调用，macroexpand也不会展开它们。
+
+函数`macroexpand`不会展开对内联函数的调用。通常不需要这样做，因为调用内联函数并不比调用普通函数更难理解。
+
+如果提供了environment，它将指定一个宏定义列表，这些宏定义将显示当前定义的宏。字节编译使用这个特性。
+
+``` Elisp
+(defmacro inc (var)
+    (list 'setq var (list '1+ var)))
+
+
+(macroexpand '(inc r))
+     ⇒ (setq r (1+ r))
+
+
+(defmacro inc2 (var1 var2)
+    (list 'progn (list 'inc var1) (list 'inc var2)))
+
+
+(macroexpand '(inc2 r s))
+     ⇒ (progn (inc r) (inc s))  ; inc not expanded here.
+```
+
+#### 函数: `macroexpand-all form &optional environment` ####
+
+`macroexpand-all` 像 `macroexpand` 一样展开宏，但将在形式上查找并展开所有宏，而不仅仅是在顶层。如果没有展开宏，返回值等于form。
+
+重复上面使用 `macroexpand-all` 的例子，我们看到macroexpand-all确实扩展了对inc的内嵌调用:
+
+``` Elisp
+(macroexpand-all '(inc2 r s))
+     ⇒ (progn (setq r (1+ r)) (setq s (1+ s)))
+```
+
+#### 函数: `macroexpand-1 form &optional environment` ####
+
+这个函数像macroexpand一样展开宏，但是它只执行展开的一个步骤:如果结果是另一个宏调用，`macroexpand-1` 将不会展开它。
+
+### 14.3 Macros and Byte Compilation ###
+
+你可能会问，为什么我们要不厌其烦地计算一个宏的展开，然后再对展开进行运算。为什么不让宏体直接产生期望的结果呢?原因与编译有关。
+
+当正在编译的Lisp程序中出现宏调用时，Lisp编译器就像解释器一样调用宏定义，并接受展开。但是它不计算这个展开，而是把它当作直接出现在程序中来编译。因此，编译后的代码产生用于宏的值和副作用，但以完全编译的速度执行。如果宏体本身计算了值和副作用，这将不起作用——它们将在编译时计算，这是没有用的。
+
+为了使宏调用的编译能够工作，在编译对宏的调用时，必须已经在Lisp中定义了宏。编译器有一个特殊的功能来帮助您做到这一点:如果正在编译的文件包含defmacro形式，则该宏将在该文件的其余编译过程中临时定义。
+
+对文件进行字节编译还会在文件的顶层执行任何require调用，因此您可以通过要求定义它们的文件来确保在编译期间必要的宏定义可用(请参阅功能 Features)。为了避免在运行编译后的程序时加载宏定义文件，请在require调用周围编写 `eval-when-compile`(参见编译期间的求值 Evaluation During Compilation)。
+
+### 14.4 Defining Macros ###
+
+Lisp宏对象是一个列表，它的CAR是宏，CDR是函数。通过将函数(带apply)应用于来自宏调用的未求值参数列表来展开宏。
+
+可以像使用匿名函数一样使用匿名Lisp宏，但从来没有这样做过，因为将匿名宏传递给mapcar等函数是没有意义的。实际上，所有Lisp宏都有名字，它们几乎总是用defmacro宏定义的。
+
+#### 宏: `defmacro name args [doc] [declare] body...` ####
+
+defmacro将符号名(不应该加引号)定义为一个宏，如下所示:
+
+``` Elisp
+(macro lambda args . body)
+```
+
+(注意，该列表的CDR是一个lambda表达式。)这个宏对象存储在name的函数单元格中。args的含义与函数中的含义相同，可以使用关键字&rest和&optional(请参阅参数列表的特性 Features of Argument Lists)。名字和参数都不应该加引号。defmacro的返回值未定义。
+
+doc(如果存在)应该是一个字符串，指定宏的文档字符串。declare，如果存在的话，应该是一个为宏指定元数据的声明表单(参见声明表单The declare Form)。注意，宏不能有交互式声明，因为它们不能被交互式地调用。
+
+宏通常需要从常量和非常量部分的混合中构造大型列表结构。为了使这更容易，使用反引号语法(参见反引号 Backquote)。例如:
+
+``` Elisp
+(defmacro t-becomes-nil (variable)
+  `(if (eq ,variable t)
+       (setq ,variable nil)))
+
+
+(t-becomes-nil foo)
+     ≡ (if (eq foo t) (setq foo nil))
+```
+
+> 注: 反引号表示不要对后面的列表进行求值, 但是可以通过 `,` 来对里面的列表单独求值, 或者使用 `,@` 对符号进行求值
+
+``` Elisp
+`(a list of ,(+ 2 3) elements)
+     ⇒ (a list of 5 elements)
+
+
+(setq some-list '(2 3))
+     ⇒ (2 3)
+
+(cons 1 (append some-list '(4) some-list))
+     ⇒ (1 2 3 4 2 3)
+
+`(1 ,@some-list 4 ,@some-list)
+     ⇒ (1 2 3 4 2 3)
+```
+
+### 14.5 Common Problems Using Macros ###
+
+宏展开可能产生违反直觉的后果。本节描述可能导致故障的一些重要后果，以及避免故障需要遵循的规则。
+
+* Wrong Time
+* Evaluating Macro Arguments Repeatedly
+* Local Variables in Macro Expansions
+* Evaluating Macro Arguments in Expansion
+* How Many Times is the Macro Expanded?
+
+#### 14.5.1 Wrong Time ####
+
+编写宏时最常见的问题是在展开宏的同时 **过早地** 完成了一些实际工作，而不是在展开宏的过程中。例如，一个真正的包有这样的宏定义:
+
+``` Elisp
+(defmacro my-set-buffer-multibyte (arg)
+  (if (fboundp 'set-buffer-multibyte)
+      (set-buffer-multibyte arg)))
+```
+
+使用这个错误的宏定义，程序在解释时工作正常，但在编译时失败。这个宏定义在编译期间调用set-buffer-multibyte，这是错误的，然后在编译包运行时什么也不做。程序员真正想要的定义是:
+
+``` Elisp
+(defmacro my-set-buffer-multibyte (arg)
+  (if (fboundp 'set-buffer-multibyte)
+      `(set-buffer-multibyte ,arg)))
+```
+
+如果合适的话，这个宏将展开为对 `set-buffer-multibyte` 的调用，该调用将在编译后的程序实际运行时执行。
+
+#### 14.5.2 Evaluating Macro Arguments Repeatedly ####
+
+定义宏时，必须注意执行展开时计算参数的次数。下面的宏(用于促进迭代)说明了这个问题。这个宏允许我们编写for循环结构。
+
+``` Elisp
+(defmacro for (var from init to final do &rest body)
+  "Execute a simple \"for\" loop.
+For example, (for i from 1 to 10 do (print i))."
+  (list 'let (list (list var init))
+        (cons 'while
+              (cons (list '<= var final)
+                    (append body (list (list 'inc var)))))))
+
+(for i from 1 to 3 do
+   (setq square (* i i))
+   (princ (format "\n%d %d" i square)))
+→
+
+(let ((i 1))
+  (while (<= i 3)
+    (setq square (* i i))
+    (princ (format "\n%d %d" i square))
+    (inc i)))
+
+
+     -|1       1
+     -|2       4
+     -|3       9
+⇒ nil
+```
+
+这个宏中的from、to和do参数是语法糖;他们完全被忽视了。这个想法是，您将在宏调用中的这些位置写入噪声词(例如from、to和do)。
+
+下面是通过使用反引号简化的等价定义:
+
+``` Elisp
+(defmacro for (var from init to final do &rest body)
+  "Execute a simple \"for\" loop.
+For example, (for i from 1 to 10 do (print i))."
+  `(let ((,var ,init))
+     (while (<= ,var ,final)
+       ,@body
+       (inc ,var))))
+```
+
+该定义的两种形式(带反引号和不带反引号)都存在这样的缺陷，即每次迭代都要评估final。如果final是常数，这不是问题。如果它是一个更复杂的形式，比如(long-complex-calculation x)，这可能会显著降低执行速度。如果final有副作用，多次执行它可能是不正确的。
+
+设计良好的宏定义会采取措施避免这个问题，方法是生成一个只对参数表达式求值一次的展开，除非重复求值是宏预期目的的一部分。下面是for宏的正确展开:
+
+``` Elisp
+(let ((i 1)
+      (max 3))
+  (while (<= i max)
+    (setq square (* i i))
+    (princ (format "%d      %d" i square))
+    (inc i)))
+```
+
+下面是创建这个扩展的宏定义:
+
+``` Elisp
+(defmacro for (var from init to final do &rest body)
+  "Execute a simple for loop: (for i from 1 to 10 do (print i))."
+  `(let ((,var ,init)
+         (max ,final))
+     (while (<= ,var max)
+       ,@body
+       (inc ,var))))
+```
+
+不幸的是，此修复引入了另一个问题，将在下一节中描述。
+
+#### 14.5.3 Local Variables in Macro Expansions ####
+
+在上一节中，将for的定义固定如下，以使展开对宏参数求值的次数合适:
+
+``` Elisp
+
+
+(defmacro for (var from init to final do &rest body)
+  "Execute a simple for loop: (for i from 1 to 10 do (print i))."
+
+  `(let ((,var ,init)
+         (max ,final))
+     (while (<= ,var max)
+       ,@body
+       (inc ,var))))
+```
+
+for的新定义带来了一个新问题:它引入了一个用户意想不到的名为max的局部变量。这会在以下示例中造成麻烦:
+
+``` Elisp
+(let ((max 0))
+  (for x from 0 to 10 do
+    (let ((this (frob x)))
+      (if (< max this)
+          (setq max this)))))
+```
+
+(setq Max this)))))
+
+for函数体中对max的引用，应该是对max的用户绑定的引用，实际上访问的是for所做的绑定。
+
+纠正这个问题的方法是使用一个 *非内部的符号 uninterned symbol* 而不是max(参见创建和嵌入符号 Creating and Interning Symbols)。uninterned符号可以像任何其他符号一样被绑定和引用，但是由于它是由for创建的，我们知道它不能已经出现在用户的程序中。由于它没有被存储，因此用户以后无法将它放入程序中。它永远不会出现在任何地方，除非放在那里。以下是for的定义:
+
+``` Elisp
+(defmacro for (var from init to final do &rest body)
+  "Execute a simple for loop: (for i from 1 to 10 do (print i))."
+  (let ((tempvar (make-symbol "max")))
+    `(let ((,var ,init)
+           (,tempvar ,final))
+       (while (<= ,var ,tempvar)
+         ,@body
+         (inc ,var)))))
+```
+
+这将创建一个名为max的非内部符号，并将其放在展开中，而不是通常出现在表达式中的通常内部符号max。
+
+#### 14.5.4 Evaluating Macro Arguments in Expansion ####
+
+如果宏定义本身计算任何宏参数表达式，例如通过调用eval(参见eval)，则可能发生另一个问题。您必须考虑到，当调用者的上下文(将对宏展开进行求值)还无法访问时，宏展开可能在执行代码之前很久就发生了。
+
+另外，如果宏定义不使用 *词法绑定*，它的形式参数可能会隐藏同名的用户变量。在宏主体内部，宏参数绑定是此类变量的最局部绑定，因此正在计算的表单中的任何引用都引用它。下面是一个例子:
+
+``` Elisp
+(defmacro foo (a)
+  (list 'setq (eval a) t))
+
+(setq x 'b)
+(foo x) → (setq b t)
+     ⇒ t                  ; and b has been set.
+;; but
+(setq a 'c)
+(foo a) → (setq a t)
+     ⇒ t                  ; but this set a, not c.
+```
+
+用户变量的名称是a还是x是有区别的，因为a与宏参数变量a冲突。
+
+另外，上面的 `(foo x)` 的展开将在编译代码时返回不同的内容或发出错误信号，因为在这种情况下 `(foo x)` 在编译期间展开，而 `(setq x 'b)` 的执行只会在代码执行后发生。
+
+为了避免这些问题，**不要在计算宏展开时求值参数表达式**。相反，将表达式替换到宏展开中，以便在执行展开时计算其值。这就是本章中其他例子的工作原理。
+
+#### 14.5.5 How Many Times is the Macro Expanded? ####
+
+有时会出现这样的问题:宏调用在解释函数中每次求值时都会展开，而在编译函数中只展开一次(在编译期间)。如果宏定义具有副作用，则它们的工作方式将根据宏展开的次数而有所不同。
+
+因此，您应该避免在计算宏展开时产生副作用，除非您确实知道自己在做什么。
+
+有一种特殊的副作用是无法避免的:*构造Lisp对象 constructing Lisp objects*。几乎所有的宏展开都包含构造列表;这就是大多数宏的全部意义所在。这通常是安全的;只有一种情况必须小心:当您构建的对象是宏展开中**引用常量的一部分**时。
+
+如果宏在编译中只展开一次，那么对象在编译期间只构造一次。但是在解释执行中，每次宏调用运行时都会展开宏，这意味着每次都会构造一个新对象。
+
+在大多数干净的Lisp代码中，这种差异无关紧要。只有在对由宏定义构造的对象执行副作用时才有意义。因此，为了避免麻烦，请避免对由宏定义构造的对象产生副作用。下面是这些副作用如何给你带来麻烦的一个例子:
+
+``` Elisp
+(defmacro empty-object ()
+  (list 'quote (cons nil nil)))
+
+
+(defun initialize (condition)
+  (let ((object (empty-object)))
+    (if condition
+        (setcar object condition))
+    object))
+```
+
+如果解释initialize，则每次调用initialize时都构造一个新列表(nil)。因此，调用之间没有副作用。如果编译了initialize，则在编译期间展开宏empty-object，生成一个单独的常量(nil)，每次调用initialize时重用和修改该常量。
+
+避免这种病态情况的一种方法是将空对象视为一种有趣的常量，而不是内存分配结构。你不会在像 `'(nil)` 这样的常量上使用setcar，所以自然你也不会在 `(empty-object)`上使用它。
+
+### 14.6 Indenting Macros ###
+
+在宏定义中，可以使用 declare 形式(参见定义宏 Defining Macros) 指定TAB应该如何缩进对宏的调用。缩进规范是这样写的:
+
+``` Elisp
+(declare (indent indent-spec))
+```
+
+这将导致在宏名称上设置 `lisp-indent-function` 属性。
+
+以下是 `indent-spec` 的可能性:
+
+* `nil`
+    这与没有属性相同—使用标准缩进模式。
+* `defun`
+    像处理' def '构造一样处理这个函数:将第二行作为主体的开始。
+* `an integer, number`
+    函数的第一个 number 参数是有区别的参数;其余部分被认为是表达式的主体。表达式中的一行将根据该行上的第一个参数是否被区分而缩进。如果参数是正文的一部分，则该行缩进比包含表达式开头的开括号多列。如果参数是有区别的，并且是第一个或第二个参数，则会将其缩进 *两倍 twice* 的额外列。如果参数是有区别的，而不是第一个或第二个参数，则该行使用标准模式。
+* `a symbol, symbol`
+    symbol应该是函数名;调用该函数来计算该表达式内一行的缩进。该函数接收两个参数:
+    1. `pos` 被缩进的行开始的位置。
+    2. `state` `parse-partial-sexp` (用于缩进和嵌套计算的Lisp原语)在解析到该行开头时返回的值。
+
+它应该返回一个数字，即该行缩进的列数，或者返回一个列表，其car就是这样一个数字。返回一个数字和返回一个列表之间的区别是，一个数字表示在同一嵌套级别的所有后续行都应该像这样缩进;列表说明以下行可能需要不同的缩进。当缩进由 `C-M-q` 计算时，这是不同的;如果值是数字，则 `C-M-q` 在列表结束之前不需要重新计算以下行的缩进。
+
+## 15 Customization Settings ##
+
+## 16 Loading ##
+
+## 17 Byte Compilation ##
+
+## 18 Compilation of Lisp to Native Code ##
+
+## 19 Debugging Lisp Programs ##
+
+## 20 Reading and Printing Lisp Objects ##
+
+## 21 Minibuffers ##
+
 ## 22 Command Loop ##
 
 [Command Loop](https://www.gnu.org/software/emacs/manual/html_node/elisp/Command-Loop.html)
 
+当您运行Emacs时，它几乎立即进入 *编辑器命令循环 editor command loop*。这个循环读取 *键序列 key sequences*，执行它们的定义，并显示结果。在本章中，我们描述了这些事情是如何完成的，以及允许Lisp程序完成这些事情的子程序。
+
+
+* Command Loop Overview
+* Defining Commands
+* Interactive Call
+* Distinguish Interactive Calls
+* Information from the Command Loop
+* Adjusting Point After Commands
+* Input Events
+* Reading Input
+* Special Events
+* Waiting for Elapsed Time or Input
+* Quitting
+* Prefix Command Arguments
+* Recursive Editing
+* Disabling Commands
+* Command History
+* Keyboard Macros
+
+### 22.1 Command Loop Overview ###
+
+
+
+### 22.2 Defining Commands ###
+
+### 22.3 Interactive Call ###
+
+### 22.4 Distinguish Interactive Calls ###
+
+### 22.5 Information from the Command Loop ###
+
+### 22.6 Adjusting Point After Commands ###
+
+### 22.7 Input Events ###
+
+### 22.8 Reading Input ###
+
+### 22.9 Special Events ###
+
+### 22.10 Waiting for Elapsed Time or Input ###
+
+### 22.11 Quitting ###
+
+### 22.12 Prefix Command Arguments ###
+
+### 22.13 Recursive Editing ###
+
+### 22.14 Disabling Commands ###
+
+### 22.15 Command History ###
+
+### 22.16 Keyboard Macros ###
+
+## 23 Keymaps ##
+
+## 24 Major and Minor Modes ##
+
+## 25 Documentation ##
+
+## 26 Files ##
+
+## 27 Backups and Auto-Saving ##
+
 ## 28 Buffers ##
 
 [Buffers](https://www.gnu.org/software/emacs/manual/html_node/elisp/Buffers.html)
+
+## 29 Windows ##
+
+## 30 Frames ##
+
+## 31 Positions ##
+
+## 32 Markers ##
+
+## 33 Text ##
+
+## 34 Non-ASCII Characters ##
+
+## 35 Searching and Matching ##
+
+## 36 Syntax Tables ##
+
+## 37 Parsing Program Source ##
+
+## 38 Abbrevs and Abbrev Expansion ##
+
+## 39 Threads ##
+
+## 40 Processes ##
+
+## 41 Emacs Display ##
+
+## 42 Operating System Interface ##
+
+## 43 Preparing Lisp code for distribution ##
+
+## Appendix A Emacs 28 Antinews ##
+
+## Appendix B GNU Free Documentation License ##
+
+## Appendix C GNU General Public License ##
+
+## Appendix D Tips and Conventions ##
+
+## Appendix E GNU Emacs Internals ##
+
+## Appendix F Standard Errors ##
+
+## Appendix G Standard Keymaps ##
+
+## Appendix H Standard Hooks ##
 
 ---
 
