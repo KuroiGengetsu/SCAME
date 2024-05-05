@@ -13412,11 +13412,338 @@ for函数体中对max的引用，应该是对max的用户绑定的引用，实�
 
 ### 22.1 Command Loop Overview ###
 
+命令循环必须做的第一件事是读取一个键序列，它是转换成命令的一系列输入事件。它通过调用函数 `read-key-sequence` 来实现这一点。Lisp程序也可以调用这个函数(参见键序列输入 Key Sequence Input)。它们还可以使用 `read-key` 或 `read-event` 读取较低级别的输入(参见Reading One Event)，或者使用 `discard-input` 丢弃挂起的输入(参见Miscellaneous Event input Features)。
 
+键序列通过当前激活的键映射转换为命令。请参阅键查找 Key Lookup，了解如何完成此操作。结果应该是一个键盘宏或一个可交互调用的函数。如果键是 `M-x`，那么它读取另一个命令的名称，然后调用该命令。这是通过命令 `execute-extended-command` 完成的(参见交互式调用 Interactive Call)。
+
+在执行该命令之前，Emacs运行 `undo-boundary` 来创建一个undo边界。请参见维护撤销列表 Maintaining Undo Lists。
+
+要执行命令，Emacs首先通过调用 `command-execute`(参见交互式调用 Interactive Call)读取它的参数。对于用Lisp编写的命令，*交互规范 interactive specification* 说明了如何读取参数。这可以使用前缀参数(参见前缀命令参数 Prefix Command Arguments)，也可以在minibuffer中读取提示(参见Minibuffers)。
+
+例如，命令 `find-file` 有一个交互式规范，说明使用minibuffer读取文件名。`find-file` 的函数体不使用minibuffer，因此如果您从Lisp代码中将find-file作为函数调用，则必须将文件名字符串作为普通的Lisp函数参数提供。
+
+如果命令是键盘宏(即字符串或向量)，Emacs将使用 `execute-kbd-macro` 执行它(参见键盘宏 Keyboard Macros)。
+
+#### 变量: `pre-command-hook` ####
+
+编辑器命令循环在执行每个命令之前运行这个普通钩子。此时，`this-command` 包含即将执行的命令，`last-command` 描述上一条命令。请参阅命令循环中的信息 Information from the Command Loop。
+
+#### 变量: `post-command-hook` ####
+
+这个普通钩子由编辑器命令循环在执行每个命令(包括因退出或错误而过早终止的命令)之后运行。此时，`this-command` 指的是刚刚运行的命令，`last-command` 指的是之前的命令。
+
+这个钩子在Emacs第一次进入命令循环时也会运行(此时 `this-command` 和 `last-command` 都是nil)。
+
+在运行 `pre-command-hook` 和 `post-command-hook` 时，不允许退出。如果在执行其中一个钩子时发生错误，它不会终止钩子的执行;相反，错误将被沉默，发生错误的函数将从钩子中删除。
+
+进入Emacs服务器的请求(参见GNU Emacs手册中的Emacs服务器 Emacs Server)就像键盘命令一样运行这两个钩子。
+
+请注意，当缓冲区文本包含很长的行时，调用这两个钩子时，就好像它们是以 *带限制的形式 with-restriction form*(请参阅窄化Narrowing)调用一样，它们带有 `long-line-optimizations-in-command-hooks` 标签，并且缓冲区缩小到点附近的一部分。
 
 ### 22.2 Defining Commands ###
 
+特殊形式 interactive 将Lisp函数转换为命令。interactive 必须位于函数体的顶层，通常是函数体中的第一个 form;这既适用于lambda表达式(参见lambda表达式 Lambda Expressions)，也适用于defun形式(参见定义函数 Defining Functions)。这种形式在函数的实际执行过程中不做任何事情;它的存在作为一个标志，告诉Emacs命令循环可以交互式地调用该函数。交互式表单的参数指定如何读取交互式调用的参数。
+
+或者，可以在函数符号的 `interactive-form` 属性中指定交互表单。此属性的非nil值优先于函数体本身的任何交互形式。这个特性很少使用。
+
+有时，函数只打算以交互方式调用，而不是直接从Lisp调用。在这种情况下，直接或通过`declare`(参见declare表单 The declare Form)给函数一个非nil的 *仅交互属性 interactive-only property*。如果从Lisp调用该命令，这将导致字节编译器发出警告。`describe-function` 的输出将包含类似的信息。该属性的值可以是:
+
+* 一个字符串，字节编译器将在其警告中直接使用它(它应该以句号结束，而不是以大写字母开头，例如，`"use (system-name) instead."`)
+* t
+* 任何其他符号，它应该是在Lisp代码中使用的替代函数。
+
+泛型函数(请参阅泛型函数 Generic Functions)不能通过向其添加 interactive form来转换为命令。
+
+
+* Using interactive
+* Code Characters for interactive
+* Examples of Using interactive
+* Specifying Modes For Commands
+* Select among Command Alternatives
+
+#### 22.2.1 Using interactive ####
+
+本节描述如何编写使Lisp函数成为可交互调用命令的 interactive form，以及如何检查命令的 interactive form。
+
+##### 特殊形式: `interactive &optional arg-descriptor &rest modes` #####
+
+这种特殊的形式声明函数是一个命令，因此可以交互式地调用它(通过M-x或通过输入绑定到它的键序列)。参数 `arg-descriptor` 声明在交互调用命令时如何计算命令的参数。
+
+命令可以像其他函数一样从Lisp程序中调用，但是调用者提供了参数，而 `arg-descriptor` 不起作用。
+
+interactive form 必须位于函数体的顶层，或者位于函数符号的 `interactive-form` 属性(参见符号属性 Symbol Properties)中。它之所以有效，是因为命令循环在调用函数之前会查找它(参见交互式调用 Interactive Call)。一旦函数被调用，它所有的函数体形式都会被执行;此时，如果交互表单发生在主体中，表单甚至不计算其参数就返回nil。
+
+`modes` 列表允许指定要在哪些模式中使用命令。有关指定模式的效果以及何时使用它的更多详细信息，请参阅为命令指定模式 Specifying Modes For Commands。
+
+按照惯例，应该将 interactive form 放在函数体中，作为第一个顶级表单。如果 `interactive-form` 符号属性和函数体中都有交互形式，则前者优先。`interactive-form` 符号属性可用于向现有函数添加交互式表单，或更改交互处理其参数的方式，而无需重新定义函数。
+
+参数 `arg-descriptor` 有三种可能:
+
+1. 它可以省略或为nil;然后不带参数调用该命令。如果命令需要一个或多个参数，这将很快导致错误。
+2. 它可以是字符串;它的内容是由换行符分隔的元素序列，每个参数对应一个元素(有些元素实际上提供了两个参数)。每个元素由一个代码字符 code character(请参阅交互式代码字符 Code Characters for interactive)可选地后跟一个提示符prompt(有些代码字符使用而有些则忽略)组成。下面是一个例子:
+
+``` Elisp
+(interactive "P\nbFrobnicate buffer: ")
+```
+
+代码字母 `P` 将命令的第一个参数设置为 *原始命令前缀 raw command prefix*(参见前缀命令参数 Prefix Command Arguments)。`bFrobnicate buffer: ` 提示用户使用 `Frobnicate buffer: ` 输入现有缓冲区的名称，这将成为第二个也是最后一个参数。
+
+提示字符串可以使用 `%` 来包含提示符中前面的参数值(从第一个参数开始)。这是使用 `format-message` 完成的(参见格式化字符串 Formatting Strings)。例如，下面是如何读取现有缓冲区的名称，然后给该缓冲区一个新名称:
+
+``` Elisp
+(interactive "bBuffer to rename: \nsRename buffer %s to: ")
+```
+
+* 如果 `*` 出现在字符串的开头，那么如果缓冲区是只读的，则会发出错误信号。
+* 如果 `@` 出现在字符串的开头，并且用于调用命令的键序列包含任何鼠标事件，则在运行命令之前选择与第一个事件关联的窗口。
+* 如果 `^` 出现在字符串的开头，并且命令是通过 `shift-translation` 调用的，那么在运行命令之前设置标记并临时激活该区域，或者扩展已经激活的区域。如果调用该命令时没有进行 `shift-translation`，并且该区域暂时处于活动状态，请在运行该命令之前停用该区域。`shift-translation` 在用户级别由 `shift-selectm-mode` 控制;参见GNU Emacs手册中的Shift Selection。
+
+你可以同时使用 `*`、`@` 和 `^`;顺序不重要。参数的实际读取由提示字符串的其余部分控制(从第一个不是 `*`， `@` 或 `^` 的字符开始)。
+
+第三种可能, 它可以是一个Lisp表达式，但不是字符串;然后，它应该是一个 form，对其进行运算以获得要传递给命令的参数列表。通常，这个 form 将调用各种函数从用户那里读取输入，最常见的是通过 minibuffer(参见Minibuffers)或直接从键盘(参见Reading input)读取输入。
+
+提供point或标记作为参数值也很常见，但如果这样做并读取输入(无论是否使用minibuffer)，请确保在读取后获得point或标记的整数值。当前缓冲区可能正在接收子进程输出;如果子进程输出在命令等待输入时到达，它可以重新定位点和标记。
+
+下面是一个不要做的例子:
+
+``` Elisp
+; 反例
+(interactive
+ (list (region-beginning) (region-end)
+       (read-string "Foo: " nil 'my-history)))
+```
+
+下面是如何避免这个问题，通过检查点和标记后读取键盘输入:
+
+``` Elisp
+(interactive
+ (let ((string (read-string "Foo: " nil 'my-history)))
+   (list (region-beginning) (region-end) string)))
+```
+
+> 警告:参数值不应包含任何不能打印然后读取的数据类型。有些工具将命令历史保存在文件中，以便在后续会话中读取;如果命令的参数包含使用 `#<...>` 语法打印的数据类型，则这些功能将不起作用。
+> 但是，也有一些例外:可以使用有限的表达式集，例如 `(point)`、`(mark)`、`(region-begin)` 和 `(region-end)`，因为Emacs可以特别识别它们，并将表达式(而不是其值)放入命令历史记录中。要查看您编写的表达式是否属于这些异常之一，请运行命令，然后检查 `(car command-history)`。
+
+##### 函数: `interactive-form function` #####
+
+这个函数返回函数的 interactive form。如果function是一个可交互调用的函数(请参阅交互式调用 Interactive Call)，则该值是命令的 interactive form(interactive spec)，它指定如何计算其参数。否则，该值为nil。
+
+如果function是一个符号，则使用它的函数定义。当在 *开闭包 OClosure* 上调用时，工作被委托给泛型函数 `oclosure-interactive-form`。
+
+##### 函数: `oclosure-interactive-form function` #####
+
+就像 `interactive-form` 一样，这个函数接受一个命令并返回它的交互形式。不同之处在于它是一个泛型函数，只有当函数是 *开闭包 OClosure* 时才会调用它(参见Open Closures)。目的是使一些闭包类型能够动态地计算它们的交互表单，而不是在它们的一个槽中携带它。
+
+例如，这用于 `kmacro` 函数，以减少它们的内存大小，因为它们都共享相同的交互形式。它也用于 advice 函数，其中交互表单是从其组件的交互表单中计算出来的，这样可以使计算更加懒惰，并在重新定义其中一个组件时正确调整交互表单。
+
+#### 22.2.2 Code Characters for interactive ####
+
+下面的代码字符描述包含了一些关键字，定义如下:
+
+* `Completion`
+    提供补全。TAB、SPC和RET执行名称补全，因为参数是使用 `completing-read`(参见补全 Completion)读取的。`?` 显示可能的补全列表。
+* `Existing`
+    需要现有对象的名称。无效的名称不被接受;如果当前输入无效，则退出minibuffer的命令不会退出。
+* `Default`
+    如果用户没有在minibuffer中输入任何文本，则使用某种类型的默认值。默认值取决于代码字符。
+* `No I/O`
+    这个代码字母在不读取任何输入的情况下计算参数。因此，它不使用提示字符串，并且忽略您提供的任何提示字符串。
+    即使代码字母不使用提示字符串，如果它不是字符串中的最后一个代码字符，您也必须在它后面加一个换行符。
+* `Prompt`
+    代码字符之后立即出现提示符。提示符以字符串的结尾或换行符结束。
+* `Special`
+    此代码字符仅在交互式字符串的开头有意义，它不查找提示符或换行符。它是一个单独的、孤立的字符。
+
+以下是用于 `interactive` 的代码字符描述:
+
+* `*`
+    如果当前缓冲区为只读，则发出错误信号。**Special**。
+* `@`
+    选择调用此命令的键序列中第一个鼠标事件中提到的窗口。**Special**。
+* `^`
+    如果命令是通过 `shift-translation` 调用的，请在运行命令之前设置标记并临时激活该区域，或者扩展已经激活的区域。如果调用该命令时没有进行移位转换，并且该区域暂时处于活动状态，请在运行该命令之前停用该区域。**Special**。
+* `a`
+    函数名(即满足fboundp的符号)。**Existing**，**Completion**，**Prompt**。
+* `b`
+    现有缓冲区的名称。默认情况下，使用当前缓冲区的名称(请参阅 Buffers)。**Existing**, **Completion**, **Default**, **Prompt**
+* `B`
+    缓冲区名称。缓冲区不需要存在。默认情况下，使用最近使用过的缓冲区的名称，而不是当前缓冲区的名称。**Completion**，**Default**，**Prompt**。
+* `c`
+    一个字符。光标不会移动到 echo 区域。**Prompt**。
+* `C`
+    命令名(即满足 `commandp` 的符号)。**Existing**，**Completion**，**Prompt**。
+* `d`
+    点的位置，作为一个整数(参见点 Point)。**No I/O**。
+* `D`
+    一个目录。默认值是当前缓冲区的当前默认目录 `default-directory` (参见展开文件名的函数 Functions that Expand Filenames)。**Existing**，`Completion`，**Default**，**Prompt**。
+* `e`
+    调用命令的键序列中的第一个或下一个非键盘事件。更准确地说，`e` 获取的事件是列表，因此您可以查看列表中的数据。参见输入事件 Input Events。 **No I/O**。
+    对于鼠标事件和特殊系统事件使用 `e` (参见Miscellaneous system events)。命令接收到的事件列表取决于事件。请参阅Input Events，它在相应的小节中描述了每个事件的列表形式。
+    您可以在单个命令的交互规范中多次使用 `e`。如果调用该命令的键序列有n个列表事件，则第n个 `e` 提供第n个这样的事件。不是列表的事件，例如功能键和ASCII字符，在涉及 `e` 的情况下不计算在内。
+* `f`
+    现有文件的文件名(参见文件名 File Names)。默认值请参见读取文件名 Reading File Names。**Existing**，**Completion**，**Default**，**Prompt**。
+* `F`
+    文件名。该文件不必存在。**Completion**，**Default**，**Prompt**。
+* `G`
+    文件名。该文件不必存在。如果用户只输入一个目录名，那么该值就是该目录名，不添加目录中的文件名。**Completion**，**Default**，**Prompt**。
+* `i`
+    一个无关的 argument。这段代码总是提供nil作为参数值。 **No I/O**。
+* `k`
+    一个键序列(参见键序列)。这将持续读取事件，直到在当前键映射中找到命令(或未定义的命令)。键序列参数表示为字符串或向量。光标不会移动到回声区域。**Prompt**。
+    如果 `k` 读取一个以 `down-event` 结束的键序列，它也读取并丢弃后面的 `up-event`。你可以使用 `U` 代码字符访问 `up-event`。
+    诸如 `describe-key` 和 `keymap-global-set` 之类的命令使用这种输入。
+* `K`
+    form 上的键序列，可用作输入 `keymap-set` 等函数。它的工作原理类似于 `k`，除了它抑制了对于键序列中的最后一个输入事件，通常用于(必要时)将未定义的键转换为已定义的键(参见键序列输入)的转换，因此这种形式通常用于提示要绑定到命令的新键序列。
+* `m`
+    mark 的位置，以整数表示。**No I/O**。
+* `n`
+    一个数字，用 minibuffer 读取。如果输入的不是数字，用户必须再试一次。`n` 从不使用前缀参数。**Prompt**。
+* `N`
+    数字前缀参数;但如果没有前缀参数，则像读取n一样读取数字。该值始终是数字。参见前缀命令参数 Prefix Command Arguments。**Prompt**。
+* `p`
+    数字前缀参数。(注意这里的 p 是小写的。) **No I/O**。
+* `P`
+    原始前缀参数 raw prefix argument。(注意这个 P 是大写的。) **No I/O**。
+* `r`
+    点和标记，作为两个数字参数，最小的先。这是唯一指定两个连续参数而不是一个参数的代码字母。如果在调用命令时当前缓冲区中没有设置该标记，则会发出错误信号。如果 *瞬态标记模式 Transient Mark mode* 被打开(参见标记 The Mark)——默认情况下是这样的——并且用户选项 `mark-even-if-inactive` 为nil，那么即使设置了标记，Emacs也会发出错误信号，但标记是不活动的。 **No I/O**。
+* `s`
+    任意文本，在minibuffer中读取并作为字符串返回(参见使用minibuffer读取文本字符串 Reading Text Strings with the Minibuffer)。用 `C-j` 或 `RET` 终止输入(`C-q` 可用于在输入中包括这两个字符中的任何一个)。**Prompt**。
+* `S`
+    在 minibuffer 中读取其名称的内部符号 interned symbol。用 `C-j` 或 `RET` 结束输入。其他通常结束符号的字符(如空格、圆括号和方括号)在这里不这样做。**Prompt**。
+* `U`
+    键序列或nil。可以在 `k` 或 `K` 参数之后使用，以获得在 `k` 或 `K` 读取 down-event 后被丢弃的 up-event (如果有的话)。如果没有up-event被丢弃，`U` 提供nil作为参数。**No I/O**。
+* `v`
+    声明为用户选项的变量(即满足谓词 `custom-variable-p`)。这将使用 `read-variable` 读取变量。参见read-variable的定义 Definition of read-variable。**Existing**，**Completion**，**Prompt**。
+* `x`
+    用read语法指定的Lisp对象，以 `C-j` 或 `RET` 结束。对象不被求值。参见使用 minibuffer 读取Lisp对象 Reading Lisp Objects with the Minibuffer。**Prompt**。
+* `X`
+    Lisp form 的值。`X` 的读法与 `x` 的读法相同，然后求值，使其值成为命令的参数。**Prompt**。
+* `z`
+    一种编码系统名称(a symbol)。如果用户输入空输入，则参数值为nil。参见编码系统 Coding Systems。**Completion**，**Existing**，**Prompt**。
+* `Z`
+    编码系统名称(符号)-但仅当此命令有前缀参数时。如果没有前缀参数，`Z` 提供nil作为参数值。**Completion**，**Existing**，**Prompt**。
+
+#### 22.2.3 Examples of Using interactive ####
+
+以下是一些 interactive 的例子:
+
+``` Elisp
+(defun foo1 ()              ; foo1 takes no arguments,
+    (interactive)           ;   just moves forward two words.
+    (forward-word 2))
+     ⇒ foo1
+
+
+(defun foo2 (n)             ; foo2 takes one argument,
+    (interactive "^p")      ;   which is the numeric prefix.
+                            ; under shift-select-mode,
+                            ;   will activate or extend region.
+    (forward-word (* 2 n)))
+     ⇒ foo2
+
+
+(defun foo3 (n)             ; foo3 takes one argument,
+    (interactive "nCount:") ;   which is read with the Minibuffer.
+    (forward-word (* 2 n)))
+     ⇒ foo3
+
+
+(defun three-b (b1 b2 b3)
+  "Select three existing buffers.
+Put them into three windows, selecting the last one."
+
+    (interactive "bBuffer1:\nbBuffer2:\nbBuffer3:")
+    (delete-other-windows)
+    (split-window (selected-window) 8)
+    (switch-to-buffer b1)
+    (other-window 1)
+    (split-window (selected-window) 8)
+    (switch-to-buffer b2)
+    (other-window 1)
+    (switch-to-buffer b3))
+     ⇒ three-b
+
+(three-b "*scratch*" "declarations.texi" "*mail*")
+     ⇒ nil
+```
+
+#### 22.2.4 Specifying Modes For Commands ####
+
+Emacs中的许多命令都是通用的，没有绑定到任何特定的模式。例如，`M-x kill-region` 几乎可以在任何具有可编辑文本的模式中使用，而显示信息的命令(如 `M-x list-buffers`)几乎可以在任何上下文中使用。
+
+然而，许多其他命令是专门与模式绑定的，在该上下文中没有任何意义。例如，如果在Dired缓冲区之外使用 `M-x dired-diff`，则只会发出错误信号。
+
+因此，Emacs有一种机制来指定命令属于的模式:
+
+``` Elisp
+(defun dired-diff (...)
+  ...
+  (interactive "p" dired-mode)
+  ...)
+```
+
+这将把命令标记为仅适用于dired模式(或从dired模式派生的任何模式)。可以向交互表单添加任意数量的模式。
+
+指定模式会影响 `M-S-x` 中的命令补全( `execute-extended-command-for-buffer`，参见交互式调用 Interactive Call)。它还可能影响 `M-x` 中的补全，具体取决于 `read-extended-command-predicate` 的值。
+
+例如，当使用 `command-completion-default-include-p` 谓词作为 `read-extended-command-predicate` 的值时，`M-x` 不会列出已标记为适用于特定模式的命令(当然，除非您在使用该模式的缓冲区中)。这适用于 major 和 minor modes。(相比之下，`M-S-x` 总是从补全候选项中省略不适用的命令。)
+
+默认情况下，`read-extended-command-predicate` 为nil, `M-x` 中的补全将列出与用户键入内容匹配的所有命令，无论这些命令是否标记为适用于当前缓冲区的模式。
+
+将命令标记为适用于某个模式也会使 `C-h m` 列出这些命令(如果它们没有绑定到任何键)。
+
+如果使用这个扩展的 interactive form 不方便(因为代码应该在不支持扩展交互式表单的旧版本的Emacs中工作)，可以使用以下等效声明(参见声明表单 The declare form):
+
+``` Elisp
+(declare (modes dired-mode))
+```
+
+用模式标记哪些命令在某种程度上是一个品味问题，但是在模式之外明显不起作用的命令应该被标记。这包括从其他地方调用时会发出错误信号的命令，但也包括从意外模式调用时具有破坏性的命令。(这通常包括为特殊(即非编辑)模式编写的大多数命令。)
+
+有些命令可能是无害的，并且在从其他模式调用时“工作”，但是如果在其他地方使用它们实际上没有多大意义，则仍然应该使用模式标记。例如，许多特殊模式具有退出绑定到 `q` 的缓冲区的命令，并且可能不做任何事情，只是发出类似“从此模式再见”的消息，然后调用 `kill-buffer`。这个命令可以在任何模式下“工作”，但是几乎不可能有人真正想要在这个特殊模式的上下文中使用这个命令。
+
+许多模式都有一组不同的命令，以不同的方式启动模式(例如，`eww-open-in-new-buffer` 和 `eww-open-file`)。这样的命令永远不应该被标记为特定于模式的，因为它们可以由用户从几乎任何上下文中发出。
+
+#### 22.2.5 Select among Command Alternatives ####
+
+有时，定义一个命令作为“通用调度程序”是很有用的，它能够根据用户的需要调用一组命令中的一个。
+
+例如，假设您想定义一个名为“open”的命令，它可以“打开”并显示几种不同类型的对象。或者您可以有一个名为“mua”(它代表邮件用户代理)的命令，它可以使用几个电子邮件后端(如Rmail、Gnus或MH-E)之一来读取和发送电子邮件。
+
+宏 `define-alternatives` 可用于定义此类通用命令。通用命令是一种交互函数，它的实现可以根据用户偏好从几个备选方案中选择。
+
+##### 宏: `define-alternatives command &rest customizations` #####
+
+这个宏定义了新的 *泛型命令 generic command*，它可以有几个替代的实现。参数命令应该是一个不加引号的符号。
+
+当被调用时，宏创建一个交互式的Lisp闭包(参见闭包 Closures)。当用户第一次运行 `M-x` 命令RET时，Emacs要求选择命令的备选实现之一，并为这些备选的名称提供补全。
+
+这些名称来自名为 `command-alternatives`的用户选项，由宏创建(如果以前不存在)。为了更有用，该变量的值应该是一个列表，其元素的形式为 `(alt-name . alt-func)`，其中 `alt-name` 是备选项的名称，而 `alt-func` 是在选择该备选项时要调用的交互函数。当用户选择一个备选方案时，Emacs会记住这个选择，然后在用户再次调用 `M-x` 命令时自动调用所选的备选方案，而不会提示。要选择不同的替代方案，请键入 `C-u M-x command RET` 然后Emacs将再次提示选择其中一个替代方案，并且选择将覆盖前一个替代方案。
+
+变量 `command-alternatives` 可以在调用 `define-alternatives` 之前创建，并带有适当的值;否则，宏将创建带有nil值的变量，然后用描述替代方案的关联填充该变量。希望自己实现现有通用命令的包可以使用 autoload cookies(参见自动加载 Autoload)来添加到列表中，例如:
+
+``` Elisp
+;;;###autoload (push '("My name" . my-foo-symbol) foo-alternatives
+```
+
+如果可选参数 `customizations` 非nil，则它应该由交替的 `defcustom` 关键字(通常是 `:group` 和 `:version`)和添加到 defcustom command-alternatives 定义中的值组成。
+
+下面是一个简单的通用调度命令open的例子，有3种不同的实现:
+
+``` Elisp
+(define-alternatives open
+  :group 'files
+  :version "42.1")
+
+(setq open-alternatives
+      '(("file" . find-file)
+        ("directory" . dired)
+        ("hexl" . hexl-find-file)))
+```
+
 ### 22.3 Interactive Call ###
+
+[Interactive Call](https://www.gnu.org/software/emacs/manual/html_node/elisp/Interactive-Call.html)
 
 ### 22.4 Distinguish Interactive Calls ###
 
