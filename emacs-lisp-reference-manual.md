@@ -13745,6 +13745,91 @@ Emacs中的许多命令都是通用的，没有绑定到任何特定的模式。
 
 [Interactive Call](https://www.gnu.org/software/emacs/manual/html_node/elisp/Interactive-Call.html)
 
+在命令循环将键序列转换为命令之后，它使用 `command-execute` 函数调用该命令。如果命令是一个函数，`command-execute` 会调用 `call-interactively`，后者读取参数并调用命令。您也可以自己调用这些函数。
+
+注意，在这个上下文中，术语 *command* 指的是可交互调用的函数(或类函数对象)或键盘宏。它指的不是用于调用命令的键序列(请参阅键映射 Keymaps)。
+
+#### 函数: `commandp object &optional for-call-interactively` ####
+
+如果 object 是 command，该函数返回t。否则，它返回nil。
+
+命令包括
+
+* 字符串和向量(它们被视为键盘宏)
+* 包含顶级 interactive form 的lambda表达式(参见 Using interactive)
+* 由这些lambda表达式组成的字节码函数对象
+* 声明为交互式的autolload对象(autolload的第四个参数非空)
+* 以及一些 primitive 函数。
+* 此外，如果符号具有非空交互形式属性，或者其函数定义满足commandp，则将其视为命令。
+
+如果 `for-call-interactively` 为非nil，则command仅对 `call-interactively` 可以调用的对象返回t，而不是键盘宏。
+
+有关使用 `commandp` 的实际示例，请参阅访问文档字符串中的文档 Access to Documentation Strings。
+
+#### 函数: `call-interactively command &optional record-flag keys` ####
+
+该函数调用可交互调用的函数命令，并根据其交互调用规范提供参数。它返回 command 返回的任何内容。
+
+例如，如果您有一个具有以下签名的函数:
+
+``` Elisp
+(defun foo (begin end)
+  (interactive "r")
+  ...)
+```
+
+然后说
+
+``` Elisp
+(call-interactively 'foo)
+```
+
+将使用 region (point 和 mark)作为参数调用foo。
+
+如果command不是函数，或者不能交互调用(即不是命令)，则会发出错误信号。注意，键盘宏(字符串和向量)是不被接受的，即使它们被认为是命令，因为它们不是函数。如果command是一个符号，则 `call-interactively` 使用它的函数定义。
+
+如果 `record-flag` 为非空，则该命令及其参数将无条件地添加到 *命令历史列表 command-history* 中。否则，只有当命令使用minibuffer读取参数时才会添加该命令。参见命令历史记录 Command History。
+
+如果给出了参数 `keys`，则应该是一个矢量，它指定在命令查询使用哪些事件来调用它时要提供的事件序列。如果keys省略或为nil，则默认为 `this-command-keys-vector` 的返回值。参见this-command-keys-vector的定义 Definition of this-command-keys-vector。
+
+#### 函数: `funcall-interactively function &rest arguments` ####
+
+这个函数的工作方式类似于funcall(请参阅调用函数 Calling Functions)，但它使调用看起来像一个交互式调用:调用 function 内部的 `called-interactively-p` 将返回t。如果function不是命令，则调用它时不会发出错误信号。
+
+#### 函数: `command-execute command &optional record-flag keys special` ####
+
+这个函数执行 command。参数命令必须满足`commandp`谓词;也就是说，它必须是一个可交互调用的函数或键盘宏。
+
+使用 `execute-kbd-macro` 执行字符串或向量作为 command。将函数与 `record-flag` 和 `keys` 参数一起传递给`call-interactively`(见上文)。
+
+如果 `command` 是一个符号，则用它的函数定义代替它。具有自动加载定义的符号，如果声明为代表可交互调用的函数，则视为命令。这样的定义是通过加载指定的库然后重新检查符号的定义来处理的。
+
+参数 `special`，如果给定，意味着忽略 *前缀参数 prefix argument*，不清除它。这用于执行特殊事件(参见特殊事件 Special Events)。
+
+#### 函数: `execute-extended-command prefix-argument` ####
+
+这个函数使用 `completing-read`(参见Completion)从minibuffer中读取命令名。然后使用 `command-execute` 调用指定的命令。该命令返回的值将成为 `execute-extended-command` 的值。
+
+如果命令要求前缀参数，则接收值 `prefix-argument`。如果交互式地调用 `execute-extended-command`，则将当前的 *原始前缀参数 raw prefix argument* 用于prefix-argument，从而传递给正在运行的任何命令。
+
+`execute-extended-command` 是 `M-x` 的正常定义，所以它使用字符串 `M-x` 作为提示符。(最好从用于调用 `execute-extended-command` 的事件中获取提示符，但这很难实现。)对prefix参数值的描述(如果有的话)也会成为提示符的一部分。
+
+``` Elisp
+(execute-extended-command 3)
+---------- Buffer: Minibuffer ----------
+3 M-x forward-word RET
+---------- Buffer: Minibuffer ----------
+     ⇒ t
+```
+
+该命令需要使用 `read-extended-command-predicate` 变量，该变量可以过滤掉不适用于当前主模式(或已启用的次要模式)的命令。缺省情况下，该变量的值为nil，不过滤任何命令。但是，自定义它以调用函数 `command-completion-default-include-p` 将执行依赖于模式的过滤。`read-extended-command-predicate` 可以是任意谓词函数;它将带两个参数被调用:命令的符号和当前缓冲区。如果要在该缓冲区中完成时包含该命令，则应该返回非nil。
+
+#### 命令: `execute-extended-command-for-buffer prefix-argument` ####
+
+这类似于 `execute-extended-command`，但将为完成提供的命令限制为那些与当前主模式(以及启用的次要模式)特别相关的命令。这包括带有模式标记的命令(请参阅使用交互式 Using interactive)，以及绑定到本地活动键映射的命令。该命令是 `M-S-x` 的正常定义(即“meta shift x”)。
+
+这两个命令都提示输入命令名称，但使用不同的完成规则。您可以在提示时使用 `M-S-x` 命令在这两种模式之间切换。
+
 ### 22.4 Distinguish Interactive Calls ###
 
 ### 22.5 Information from the Command Loop ###
